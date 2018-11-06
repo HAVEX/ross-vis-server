@@ -11,7 +11,11 @@ from tornado.options import define, options
 from tornado.tcpserver import TCPServer
 from tornado.iostream import StreamClosedError
 
-define("port", default=8888, help="run on the given port", type=int)
+from streamserver import DataStreamHandler, startSocketServer
+from datareader import readRossDataSample
+
+define("http", default=8888, help="run on the given port", type=int)
+define("stream", default=8000, help="streaming on the given port", type=int)
 
 class Application(tornado.web.Application):
     def __init__(self):
@@ -30,7 +34,6 @@ class StreamServer(TCPServer):
         while True:
             try:
                 data = await stream.read_until(b"\n")
-                # data = await stream.recv(8 * 1024 * 1024).strip()
                 await sys.stdout.write(data)
             except StreamClosedError:
                 break
@@ -57,11 +60,19 @@ class MainHandler(tornado.web.RequestHandler):
     def get(self):
         self.render("index.html")
 
+def processor(sample):
+    data = readRossDataSample(sample)
+    print(data)
 
-if __name__ == "__main__":
+
+def main():
     tornado.options.parse_command_line()
     app = Application()
-    app.listen(options.port)
-    server = TCPServer()
-    server.listen(8000)
+    app.listen(options.http)
+    print("HTTP and WebSocket listening on", 'localhost', options.http)
+    DataStreamHandler.setDataProcessor(processor)
+    startSocketServer(DataStreamHandler, 'localhost', options.stream)
     tornado.ioloop.IOLoop.current().start()    
+
+if __name__ == "__main__":
+    main()

@@ -5,7 +5,9 @@ import sys
 
 class DataStreamHandler(socketserver.StreamRequestHandler):
 
-    processData = list()
+    @classmethod
+    def setDataProcessor(cls, processor):
+        cls.processor = processor
 
     def handle(self):
         # self.request is the TCP socket connected to the client
@@ -19,16 +21,15 @@ class DataStreamHandler(socketserver.StreamRequestHandler):
             print(len(self.data), bufSize)
 
             if(len(self.data) - bufSize == 4):
-                if(callable(processData)):
-                    DataStreamHandler.processData(self.data)
+                if(callable(DataStreamHandler.processor)):
+                    DataStreamHandler.processor(self.data)
                     
 
-
-def startSocketServer(streamHandler, host = 'localhost', port = 8000):
-    server = socketserver.TCPServer((host, port), streamHandler)
+def startSocketServer(StreamHandler, host = 'localhost', port = 8000):
+    server = socketserver.TCPServer((host, port), StreamHandler)
     # Activate the server; this will keep running until you
     # interrupt the program with Ctrl-C
-    print("listening on", host, port)
+    print("Receiving data streams on", host, port)
     server.serve_forever()
 
 if __name__ == "__main__":

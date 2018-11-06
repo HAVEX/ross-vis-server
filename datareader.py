@@ -68,6 +68,10 @@ def readDataFromFile(filename, includes = ['PeData', 'KpData'], excludes = ['Mod
     return result
 
 if __name__ == '__main__':
-    if (os.path.isfile(sys.argv[1])):
-        data = readDataFromFile(sys.argv[1])
-        print(json.dumps(data))
+
+    if (len(sys.argv) < 3):
+        print('Usage: %s <ross_data_filename>' % sys.argv[0])
+    else:
+        if (os.path.isfile(sys.argv[1])):
+            data = readDataFromFile(sys.argv[1])
+            print(json.dumps(data))

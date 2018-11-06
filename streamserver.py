@@ -3,33 +3,26 @@ import flatbuffers
 import struct
 import sys
 
-def createDataStreamHandler(processData):
-    class DataStreamHandler(socketserver.StreamRequestHandler):
-        """
-        The request handler class for our server.
+class DataStreamHandler(socketserver.StreamRequestHandler):
 
-        It is instantiated once per connection to the server, and must
-        override the handle() method to implement communication to the
-        client.
-        """
+    processData = list()
 
-        def handle(self):
-            # self.request is the TCP socket connected to the client
-            while True:
-                self.data = self.request.recv(8 * 1024 * 1024).strip()
+    def handle(self):
+        # self.request is the TCP socket connected to the client
+        while True:
+            self.data = self.request.recv(8 * 1024 * 1024).strip()
 
-                if (len(self.data) == 0): # connection closed
-                    break
+            if (len(self.data) == 0): # connection closed
+                break
 
-                bufSize = struct.unpack('i', self.data[:4])[0]
-                print(len(self.data), bufSize)
+            bufSize = struct.unpack('i', self.data[:4])[0]
+            print(len(self.data), bufSize)
 
-                if(len(self.data) - bufSize == 4):
-                    if(callable(processData)):
-                        processData(self.data)
+            if(len(self.data) - bufSize == 4):
+                if(callable(processData)):
+                    DataStreamHandler.processData(self.data)
                     
 
-    return DataStreamHandler
 
 def startSocketServer(streamHandler, host = 'localhost', port = 8000):
     server = socketserver.TCPServer((host, port), streamHandler)
@@ -41,4 +34,5 @@ def startSocketServer(streamHandler, host = 'localhost', port = 8000):
 if __name__ == "__main__":
     HOST = str(sys.argv[1])
     PORT = int(sys.argv[2])
-    startSocketServer(createDataStreamHandler(sys.stdout.write), HOST, PORT)
+    # DataStreamHandler.processData = sys.stdout.write
+    startSocketServer(DataStreamHandler, HOST, PORT)

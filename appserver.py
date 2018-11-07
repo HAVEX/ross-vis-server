@@ -34,7 +34,7 @@ class StreamServer(TCPServer):
         while True:
             try:
                 data = await stream.read_until(b"\n")
-                await sys.stdout.write(data)
+                print(len(data))
             except StreamClosedError:
                 break
 
@@ -69,10 +69,14 @@ def main():
     tornado.options.parse_command_line()
     app = Application()
     app.listen(options.http)
+
+    server = StreamServer()
+    server.listen(options.stream)
+    # startSocketServer(DataStreamHandler, 'localhost', options.stream)
     print("HTTP and WebSocket listening on", 'localhost', options.http)
     DataStreamHandler.setDataProcessor(processor)
-    startSocketServer(DataStreamHandler, 'localhost', options.stream)
     tornado.ioloop.IOLoop.current().start()    
+
 
 if __name__ == "__main__":
     main()

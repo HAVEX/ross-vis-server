@@ -40,9 +40,22 @@ def decodeRossFlatBuffer(bufObj, includes, excludes):
 
     return result
 
+def getSampleSize(buf):
+    bufSize = struct.unpack('i', buf[0:FLATBUFFER_OFFSET_SIZE])[0]
+    return bufSize
+
+def isSampleValid(buf):
+    if(len(buf) <= getSampleSize(buf) + FLATBUFFER_OFFSET_SIZE):
+        return True
+    else:
+        return False
+
 def readRossDataSample(buf, includes = ['PeData'], excludes = ['ModelData']):
-    dataBuf = ross.DamarisDataSample.GetRootAsDamarisDataSample(buf, 0)
-    result = decodeRossFlatBuffer(dataBuf, includes, excludes)
+    result = {}
+    if (isSampleValid(buf)):
+        dataBuf = ross.DamarisDataSample.GetRootAsDamarisDataSample(buf[FLATBUFFER_OFFSET_SIZE:], 0)
+        result = decodeRossFlatBuffer(dataBuf, includes, excludes)
+
     return result
 
 def readDataFromFile(filename, includes = ['PeData', 'KpData'], excludes = ['ModelData']):
@@ -55,13 +68,10 @@ def readDataFromFile(filename, includes = ['PeData', 'KpData'], excludes = ['Mod
 
         while offset < fileSize:
             bufSize = struct.unpack('i', buf[offset:offset+FLATBUFFER_OFFSET_SIZE])[0]
-            offset += FLATBUFFER_OFFSET_SIZE
-
             if(offset+bufSize > fileSize):
                 break
-
-            data = buf[offset:offset+bufSize]
-            offset += (bufSize)
+            data = buf[offset:offset+FLATBUFFER_OFFSET_SIZE+bufSize]
+            offset += (FLATBUFFER_OFFSET_SIZE + bufSize)
             result = readRossDataSample(data, includes, excludes)
             results.append(result)
 
@@ -69,9 +79,9 @@ def readDataFromFile(filename, includes = ['PeData', 'KpData'], excludes = ['Mod
 
 if __name__ == '__main__':
 
-    if (len(sys.argv) < 3):
+    if (len(sys.argv) < 2):
         print('Usage: %s <ross_data_filename>' % sys.argv[0])
     else:
         if (os.path.isfile(sys.argv[1])):
             data = readDataFromFile(sys.argv[1])
-            print(json.dumps(data))
+            print(json.dumps(data, indent=4))

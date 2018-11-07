@@ -6,11 +6,13 @@ Python version => 3.4
 
 ## Install
 ```
-pip install -r requirements
+pip install -r requirements.txt
 ```
 
 ## Start Server
 ```
-python appserver.py <host=localhost> <port=8000>
+python appserver.py --http=8888 --stream=8000
 ```
+
+The app server is listening HTTP and WebSocket requests on port 8888 and receiving data streams on port 8000
 

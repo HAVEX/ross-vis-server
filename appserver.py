@@ -6,13 +6,14 @@ import tornado.web
 import tornado.websocket
 import os.path
 import uuid
+import struct
 
 from tornado.options import define, options
 from tornado.tcpserver import TCPServer
 from tornado.iostream import StreamClosedError
 
 from streamserver import DataStreamHandler, startSocketServer
-from datareader import readRossDataSample
+from datareader import readRossDataSample, getSampleSize
 
 define("http", default=8888, help="run on the given port", type=int)
 define("stream", default=8000, help="streaming on the given port", type=int)
@@ -33,8 +34,10 @@ class StreamServer(TCPServer):
     async def handle_stream(self, stream, address):
         while True:
             try:
-                data = await stream.read_until(b"\n")
-                print(len(data))
+                sizeBuf = await stream.read_bytes()
+                size = getSampleSize(sizeBuf)
+                data = await stream.read_bytes(size)
+                print(size, len(data))
             except StreamClosedError:
                 break
 

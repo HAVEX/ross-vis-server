@@ -34,7 +34,7 @@ class StreamServer(TCPServer):
     async def handle_stream(self, stream, address):
         while True:
             try:
-                sizeBuf = await stream.read_bytes()
+                sizeBuf = await stream.read_bytes(4)
                 size = getSampleSize(sizeBuf)
                 data = await stream.read_bytes(size)
                 print(size, len(data))

@@ -10,6 +10,8 @@ import ross_damaris.sample.SimEngineMetrics as metrics
 
 FLATBUFFER_OFFSET_SIZE = 4
 
+# TODO: Create a class for all the functions in this file
+
 def decodeRossFlatBuffer(bufObj, includes, excludes):
     result = {}
 
@@ -50,13 +52,20 @@ def isSampleValid(buf):
     else:
         return False
 
-def readRossDataSample(buf, includes = ['PeData'], excludes = ['ModelData']):
+def processRawDataSample(buf, includes = ['PeData'], excludes = ['ModelData']):
     result = {}
     if (isSampleValid(buf)):
         dataBuf = ross.DamarisDataSample.GetRootAsDamarisDataSample(buf[FLATBUFFER_OFFSET_SIZE:], 0)
         result = decodeRossFlatBuffer(dataBuf, includes, excludes)
 
     return result
+
+def readRossDataSample(sampleBuf):
+        dataBuf = ross.DamarisDataSample.GetRootAsDamarisDataSample(sampleBuf, 0)
+        result = decodeRossFlatBuffer(dataBuf, includes, excludes)
+
+def getFlatbufferOffsetSize():
+    return FLATBUFFER_OFFSET_SIZE
 
 def readDataFromFile(filename, includes = ['PeData', 'KpData'], excludes = ['ModelData']):
     with open(filename, "rb") as binary_file:
@@ -72,7 +81,7 @@ def readDataFromFile(filename, includes = ['PeData', 'KpData'], excludes = ['Mod
                 break
             data = buf[offset:offset+FLATBUFFER_OFFSET_SIZE+bufSize]
             offset += (FLATBUFFER_OFFSET_SIZE + bufSize)
-            result = readRossDataSample(data, includes, excludes)
+            result = processRawDataSample(data, includes, excludes)
             results.append(result)
 
     return result

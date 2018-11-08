@@ -1,24 +1,30 @@
-
-import flatbuffers
 import struct
-
-import ross_damaris.sample.DamarisDataSample as ross
-import ross_damaris.sample.LPData as lps
-import ross_damaris.sample.KPData as kps
-import ross_damaris.sample.SimEngineMetrics as metrics
+import ross_damaris.sample.DamarisDataSample as RossSample
 
 class RossData:
     FLATBUFFER_OFFSET_SIZE = 4
 
-
-    def __init__(self, includes, excludes):
+    def __init__(self, includes = [], excludes = ['ModelData']):
         self.includes = includes
         self.excludes = excludes
     
+    def get_samples(self, bufArray):
+        arrayLength = len(bufArray)
+        SIZE_T = RossData.FLATBUFFER_OFFSET_SIZE
+        offset = 0
+        samples = list()
+        
+        while offset < arrayLength:
+            bufSize = struct.unpack('i', bufArray[offset:offset+SIZE_T])[0]
+            offset += SIZE_T
+            data = bufArray[offset:offset+SIZE_T+bufSize]
+            offset += bufSize
+            samples.append(data)
+
+        return samples
 
     def decode(self, data):
         result = {}
-
         method_names = [
             method for method in dir(data) 
             if callable(getattr(data, method)) 
@@ -26,18 +32,16 @@ class RossData:
         ]
         
         for name in method_names:
-
             if (name.endswith('DataLength') or name in self.excludes):
                 continue
 
             method = getattr(data, name)
-
             if(not name.endswith('Data')):
                 result[name] = method()
             elif(name == 'Data'):
                 result[name] = self.decode(method())
             else:
-                if(name in self.includes):
+                if(len(self.includes) == 0 or name in self.includes):
                     getLen = getattr(data, name+'Length')
                     dataLength = getLen()
                     result[name] = list()
@@ -59,9 +63,12 @@ class RossData:
 
     def read(self, dataBuf):
         if (self.isValid(dataBuf)):
-            buf = dataBuf[RossData.FLATBUFFER_OFFSET_SIZE:]
-            data = ross.DamarisDataSample.GetRootAsDamarisDataSample(buf, 0)
-            return self.decode(data)
+            return self.fetch(dataBuf[RossData.FLATBUFFER_OFFSET_SIZE:])
+
+
+    def fetch(self, dataBuf):
+        data = RossSample.DamarisDataSample.GetRootAsDamarisDataSample(dataBuf, 0)
+        return self.decode(data)
 
     def readall(self, bufArray):
         arrayLength = len(bufArray)
@@ -78,7 +85,7 @@ class RossData:
 
         return results
 
-    def flatten(self, data)
+    def flatten(self, data):
         flattens = []
         for di in data:
             flat = {}

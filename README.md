@@ -10,9 +10,10 @@ pip install -r requirements.txt
 ```
 
 ## Start Server
+To start the app server for listening HTTP and WebSocket requests on port 8888 and receiving data streams on port 8000:
 ```
 python appserver.py --http=8888 --stream=8000
 ```
 
-The app server is listening HTTP and WebSocket requests on port 8888 and receiving data streams on port 8000
+
 

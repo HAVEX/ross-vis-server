@@ -2,7 +2,6 @@ import socketserver
 import flatbuffers
 import struct
 import sys
-import asyncio
 
 class DataStreamHandler(socketserver.StreamRequestHandler):
 
@@ -26,14 +25,13 @@ class DataStreamHandler(socketserver.StreamRequestHandler):
                     DataStreamHandler.processor(self.data)
                     
 
+
 def startSocketServer(StreamHandler, host = 'localhost', port = 8000):
     server = socketserver.TCPServer((host, port), StreamHandler)
     # Activate the server; this will keep running until you
     # interrupt the program with Ctrl-C
     print("Receiving data streams on", host, port)
-    asyncio.get_event_loop().run_until_complete(server.serve_forever)
-    asyncio.get_event_loop().run_forever()
-
+    server.serve_forever()
 
 if __name__ == "__main__":
     HOST = str(sys.argv[1])

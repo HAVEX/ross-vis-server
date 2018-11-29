@@ -4,8 +4,9 @@
 
 # /// To identify what instrumentation mode the data comes from
 class InstMode(object):
-    GVT = 0
-    VT = 1
-    RT = 2
-    ET = 3
+    none = 0
+    GVT = 1
+    VT = 2
+    RT = 3
+    ET = 4
 

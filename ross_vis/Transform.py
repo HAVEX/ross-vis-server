@@ -18,11 +18,14 @@ def flatten(obj, attribute = None):
     for key,value in obj.items():
         if(type(value) != list):
             flat[key] = value
-        else:
+    
+    for key,value in obj.items():
+        if(type(value) == list):
             if(attribute != None and key != attribute):
                 continue
+            flat2 = flat.copy()
             for nestedValues in value:
-                flatNested = flat.copy()
+                flatNested = flat2.copy()
                 for nestedKey,nestedVal in nestedValues.items():
                     if(type(nestedVal) != dict):
                         flatNested[nestedKey] = nestedVal

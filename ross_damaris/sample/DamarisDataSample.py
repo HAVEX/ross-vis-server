@@ -107,13 +107,48 @@ class DamarisDataSample(object):
         return 0
 
     # DamarisDataSample
-    def ModelData(self):
+    def ModelData(self, j):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(18))
+        if o != 0:
+            x = self._tab.Vector(o)
+            x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
+            x = self._tab.Indirect(x)
+            from .ModelLP import ModelLP
+            obj = ModelLP()
+            obj.Init(self._tab.Bytes, x)
+            return obj
+        return None
+
+    # DamarisDataSample
+    def ModelDataLength(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(18))
+        if o != 0:
+            return self._tab.VectorLen(o)
+        return 0
+
+# /// next three used for internal info
+    # DamarisDataSample
+    def EntityId(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(20))
+        if o != 0:
+            return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
+        return -1
+
+    # DamarisDataSample
+    def EventId(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(22))
+        if o != 0:
+            return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
+        return -1
+
+    # DamarisDataSample
+    def Status(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(24))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Int32Flags, o + self._tab.Pos)
         return 0
 
-def DamarisDataSampleStart(builder): builder.StartObject(8)
+def DamarisDataSampleStart(builder): builder.StartObject(11)
 def DamarisDataSampleAddVirtualTs(builder, virtualTs): builder.PrependFloat64Slot(0, virtualTs, 0.0)
 def DamarisDataSampleAddRealTs(builder, realTs): builder.PrependFloat64Slot(1, realTs, 0.0)
 def DamarisDataSampleAddLastGvt(builder, lastGvt): builder.PrependFloat64Slot(2, lastGvt, 0.0)
@@ -124,5 +159,9 @@ def DamarisDataSampleAddKpData(builder, kpData): builder.PrependUOffsetTRelative
 def DamarisDataSampleStartKpDataVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def DamarisDataSampleAddLpData(builder, lpData): builder.PrependUOffsetTRelativeSlot(6, flatbuffers.number_types.UOffsetTFlags.py_type(lpData), 0)
 def DamarisDataSampleStartLpDataVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def DamarisDataSampleAddModelData(builder, modelData): builder.PrependInt32Slot(7, modelData, 0)
+def DamarisDataSampleAddModelData(builder, modelData): builder.PrependUOffsetTRelativeSlot(7, flatbuffers.number_types.UOffsetTFlags.py_type(modelData), 0)
+def DamarisDataSampleStartModelDataVector(builder, numElems): return builder.StartVector(4, numElems, 4)
+def DamarisDataSampleAddEntityId(builder, entityId): builder.PrependInt32Slot(8, entityId, -1)
+def DamarisDataSampleAddEventId(builder, eventId): builder.PrependInt32Slot(9, eventId, -1)
+def DamarisDataSampleAddStatus(builder, status): builder.PrependInt32Slot(10, status, 0)
 def DamarisDataSampleEnd(builder): return builder.EndObject()

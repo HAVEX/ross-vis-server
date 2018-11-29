@@ -23,6 +23,25 @@ class RossData:
 
         return samples
 
+    def size(self, dataBuf):
+        bufSize = struct.unpack('i', dataBuf[0:RossData.FLATBUFFER_OFFSET_SIZE])[0]
+        return bufSize
+
+    def isValid(self, dataBuf):
+        if(len(dataBuf) <= self.size(dataBuf) + RossData.FLATBUFFER_OFFSET_SIZE):
+            return True
+        else:
+            return False
+
+    def read(self, dataBuf):
+        if (self.isValid(dataBuf)):
+            return self.fetch(dataBuf[RossData.FLATBUFFER_OFFSET_SIZE:])
+
+
+    def fetch(self, dataBuf):
+        data = RossSample.DamarisDataSample.GetRootAsDamarisDataSample(dataBuf, 0)
+        return self.decode(data)
+
     def decode(self, data):
         result = {}
         method_names = [
@@ -51,35 +70,25 @@ class RossData:
         return result
 
 
-    def size(self, dataBuf):
-        bufSize = struct.unpack('i', dataBuf[0:RossData.FLATBUFFER_OFFSET_SIZE])[0]
-        return bufSize
 
-    def isValid(self, dataBuf):
-        if(len(dataBuf) <= self.size(dataBuf) + RossData.FLATBUFFER_OFFSET_SIZE):
-            return True
-        else:
-            return False
-
-    def read(self, dataBuf):
-        if (self.isValid(dataBuf)):
-            return self.fetch(dataBuf[RossData.FLATBUFFER_OFFSET_SIZE:])
-
-
-    def fetch(self, dataBuf):
-        data = RossSample.DamarisDataSample.GetRootAsDamarisDataSample(dataBuf, 0)
-        return self.decode(data)
 
     def readall(self, bufArray):
         arrayLength = len(bufArray)
         SIZE_T = RossData.FLATBUFFER_OFFSET_SIZE
         offset = 0
         results = list()
-        
+
         while offset < arrayLength:
+            if(offset+SIZE_T>arrayLength):
+                break
             bufSize = struct.unpack('i', bufArray[offset:offset+SIZE_T])[0]
+            
+            # in case data is incomplete, drop the remaining of data in the file
+            if(offset+SIZE_T+bufSize>arrayLength):
+                break
             data = bufArray[offset:offset+SIZE_T+bufSize]
             offset += (SIZE_T + bufSize)
+            
             result = self.read(data)
             results.append(result)
 

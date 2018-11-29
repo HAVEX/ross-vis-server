@@ -21,9 +21,14 @@ if __name__ == '__main__':
         print('Usage: %s <ross_data_filename>' % sys.argv[0])
     else:
         if (os.path.isfile(sys.argv[1])):
+
+            if (len(sys.argv) > 2 and sys.argv[2] in ['PeData', 'KpData', 'LpData']):
+                attr = sys.argv[2]
+            else: 
+                attr = 'PeData'
             # data = readDataFromFile(sys.argv[1])
             # print(json.dumps(data, indent=4))
             cache = Cache()
             cache.loadfile(sys.argv[1])
-            print(cache.export_json('PeData'))
+            print(cache.export_json(attr))
            

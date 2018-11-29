@@ -4,8 +4,7 @@
 
 import flatbuffers
 
-# /// Sim engine metrics that are collected by Damaris
-# /// These should have the same variable names as supplied in Damaris XML file!
+# /// Sim engine metrics that are collected by ROSS instrumentation
 class SimEngineMetrics(object):
     __slots__ = ['_tab']
 

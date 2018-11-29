@@ -32,6 +32,22 @@ class RossDataCache:
 
         return self.data
 
+    def export(self, include = None):
+        dm = RossData([include])
+        results = []
+        for row in self.data:
+            results.append(dm.fetch(row))
+        
+        return results
+
+    def export_dict(self, include = None):
+        dm = RossData([include])
+        results = []
+        for row in self.data:
+            results.append(dm.fetch(row))
+        
+        return flatten_list(results)
+
     def export_json(self, include = None):
         dm = RossData([include])
         results = []

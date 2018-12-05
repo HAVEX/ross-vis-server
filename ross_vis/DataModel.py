@@ -70,8 +70,6 @@ class RossData:
         return result
 
 
-
-
     def readall(self, bufArray):
         arrayLength = len(bufArray)
         SIZE_T = RossData.FLATBUFFER_OFFSET_SIZE

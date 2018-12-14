@@ -120,10 +120,12 @@ class StreamServer(TCPServer):
                 sizeBuf = await stream.read_bytes(RossData.FLATBUFFER_OFFSET_SIZE)
                 size = RossData.size(sizeBuf)
                 data = await stream.read_bytes(size)
+
                 if(size == len(data)):
                     logging.info('received and processed %d bytes', size)
-                
-                WebSocketHandler.cache.append(data)
+                else:
+                    print(size, len(data))
+                WebSocketHandler.cache.push(data)
 
             except StreamClosedError:
                 logging.info('stream connection closed')

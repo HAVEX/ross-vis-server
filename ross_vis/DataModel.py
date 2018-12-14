@@ -1,5 +1,6 @@
 import struct
 import ross_damaris.sample.DamarisDataSample as RossSample
+import numpy as np
 
 class RossData:
     FLATBUFFER_OFFSET_SIZE = 4
@@ -23,7 +24,8 @@ class RossData:
 
         return samples
 
-    def size(self, dataBuf):
+    @classmethod
+    def size(cls, dataBuf):
         bufSize = struct.unpack('i', dataBuf[0:RossData.FLATBUFFER_OFFSET_SIZE])[0]
         return bufSize
 
@@ -56,7 +58,11 @@ class RossData:
 
             method = getattr(data, name)
             if(not name.endswith('Data')):
+                if name.endswith('AsNumpy'):
+                    name = name[:-7]
                 result[name] = method()
+                if type(result[name]) is np.ndarray:
+                    result[name] = result[name].tolist()
             elif(name == 'Data'):
                 result[name] = self.decode(method())
             else:

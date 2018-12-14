@@ -187,7 +187,29 @@ class SimEngineMetrics(object):
             return self._tab.Get(flatbuffers.number_types.Float32Flags, o + self._tab.Pos)
         return 0.0
 
-def SimEngineMetricsStart(builder): builder.StartObject(24)
+    # SimEngineMetrics
+    def CommData(self, j):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(52))
+        if o != 0:
+            a = self._tab.Vector(o)
+            return self._tab.Get(flatbuffers.number_types.Int32Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4))
+        return 0
+
+    # SimEngineMetrics
+    def CommDataAsNumpy(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(52))
+        if o != 0:
+            return self._tab.GetVectorAsNumpy(flatbuffers.number_types.Int32Flags, o)
+        return 0
+
+    # SimEngineMetrics
+    def CommDataLength(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(52))
+        if o != 0:
+            return self._tab.VectorLen(o)
+        return 0
+
+def SimEngineMetricsStart(builder): builder.StartObject(25)
 def SimEngineMetricsAddNeventProcessed(builder, neventProcessed): builder.PrependInt32Slot(0, neventProcessed, 0)
 def SimEngineMetricsAddNeventAbort(builder, neventAbort): builder.PrependInt32Slot(1, neventAbort, 0)
 def SimEngineMetricsAddNeventRb(builder, neventRb): builder.PrependInt32Slot(2, neventRb, 0)
@@ -212,4 +234,6 @@ def SimEngineMetricsAddRbTime(builder, rbTime): builder.PrependFloat32Slot(20, r
 def SimEngineMetricsAddCancelQTime(builder, cancelQTime): builder.PrependFloat32Slot(21, cancelQTime, 0.0)
 def SimEngineMetricsAddAvlTime(builder, avlTime): builder.PrependFloat32Slot(22, avlTime, 0.0)
 def SimEngineMetricsAddVirtualTimeDiff(builder, virtualTimeDiff): builder.PrependFloat32Slot(23, virtualTimeDiff, 0.0)
+def SimEngineMetricsAddCommData(builder, commData): builder.PrependUOffsetTRelativeSlot(24, flatbuffers.number_types.UOffsetTFlags.py_type(commData), 0)
+def SimEngineMetricsStartCommDataVector(builder, numElems): return builder.StartVector(4, numElems, 4)
 def SimEngineMetricsEnd(builder): return builder.EndObject()

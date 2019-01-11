@@ -22,7 +22,6 @@ from ross_vis.Transform import flatten, flatten_list
 define("http", default=8888, help="run on the given port", type=int)
 define("stream", default=8000, help="streaming on the given port", type=int)
 define("appdir", default="../app/dist", help="serving app in given directory", type=str)
-define("test", default=0, help="run with test mode", type=int)
 define("datafile", default='', help="load data from file", type=str)
 
 class Application(tornado.web.Application):
@@ -148,9 +147,8 @@ class AjaxGetJsonData(tornado.web.RequestHandler):
 def main():
     tornado.options.parse_command_line()
 
-    if(options.test == 1):
-        if (os.path.isfile(options.datafile)):
-            WebSocketHandler.cache.loadfile(options.datafile)
+    if (os.path.isfile(options.datafile)):
+        WebSocketHandler.cache.loadfile(options.datafile)
         print('Test mode: loaded %d samples' % WebSocketHandler.cache.size())
 
     app = Application(options.appdir)

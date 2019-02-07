@@ -18,6 +18,7 @@ from tornado.iostream import StreamClosedError
 from ross_vis.DataModel import RossData
 from ross_vis.DataCache import RossDataCache
 from ross_vis.Transform import flatten, flatten_list
+from ross_vis.Analytics import Analytics
 
 define("http", default=8888, help="run on the given port", type=int)
 define("stream", default=8000, help="streaming on the given port", type=int)
@@ -30,6 +31,7 @@ class Application(tornado.web.Application):
             (r"/", MainHandler),
             (r'/app/(.*)', tornado.web.StaticFileHandler, {'path': appdir}),
             (r"/data", AjaxGetJsonData),
+            (r"/pca", AjaxGetPCA),
             (r"/websocket", WebSocketHandler)
         ]
         settings = dict(
@@ -141,6 +143,23 @@ class AjaxGetJsonData(tornado.web.RequestHandler):
         schema = {k:type(v).__name__ for k,v in data[0].items()}
         self.write({
             'data': WebSocketHandler.cache.export_dict('KpData'),
+            'schema': schema
+        })
+
+class AjaxGetPCA(tornado.web.RequestHandler):
+    def set_default_headers(self):
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Headers", "x-requested-with")
+        self.set_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
+
+    def get(self):
+        data = WebSocketHandler.cache.export_dict('KpData')
+        analysis = Analytics(data, index=['Peid', 'Kpid', 'RealTs', 'LastGvt', 'VirtualTs', 'KpGid', 'EventId'])
+        analysis.groupby(['Peid', 'Kpid'])
+        result = analysis.pca(2)
+        schema = {k:type(v).__name__ for k,v in data[0].items()}
+        self.write({
+            'data': result.to_dict('records'),
             'schema': schema
         })
 

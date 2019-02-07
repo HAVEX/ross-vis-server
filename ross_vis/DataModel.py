@@ -39,7 +39,6 @@ class RossData:
         if (self.isValid(dataBuf)):
             return self.fetch(dataBuf[RossData.FLATBUFFER_OFFSET_SIZE:])
 
-
     def fetch(self, dataBuf):
         data = RossSample.DamarisDataSample.GetRootAsDamarisDataSample(dataBuf, 0)
         return self.decode(data)

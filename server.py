@@ -4,12 +4,11 @@ import tornado.ioloop
 import tornado.options
 import tornado.web
 import tornado.websocket
+import tornado.autoreload
 import os.path
 import uuid
 import struct
 import time
-import json
-import urllib
 
 from tornado.options import define, options
 from tornado.tcpserver import TCPServer
@@ -19,6 +18,10 @@ from ross_vis.DataModel import RossData
 from ross_vis.DataCache import RossDataCache
 from ross_vis.Transform import flatten, flatten_list
 from ross_vis.Analytics import Analytics
+
+from cpdHandler import CPDHandler
+from webSocketHandler import WebSocketHandler
+from pcaHandler import PCAHandler
 
 define("http", default=8888, help="run on the given port", type=int)
 define("stream", default=8000, help="streaming on the given port", type=int)
@@ -31,8 +34,10 @@ class Application(tornado.web.Application):
             (r"/", MainHandler),
             (r'/app/(.*)', tornado.web.StaticFileHandler, {'path': appdir}),
             (r"/data", AjaxGetJsonData),
-            (r"/pca", AjaxGetPCA),
-            (r"/websocket", WebSocketHandler)
+            # (r"/pca", AjaxGetPCA),
+            (r"/websocket", WebSocketHandler),
+            (r"/cpd", CPDHandler),
+            (r"/pca", PCAHandler)
         ]
         settings = dict(
             cookie_secret="'a6u^=-sr5ph027bg576b3rl@#^ho5p1ilm!q50h0syyiw#zjxwxy0&gq2j*(ofew0zg03c3cyfvo'",
@@ -42,68 +47,6 @@ class Application(tornado.web.Application):
         )
         
         super(Application, self).__init__(handlers, **settings)
-
-
-class WebSocketHandler(tornado.websocket.WebSocketHandler):
-    waiters = set()
-    cache = RossDataCache()
-    cache_size = 100
-
-    def open(self):
-        print('new connection')
-        self.data_attribute = 'PeData'
-        self.method = 'get' 
-        WebSocketHandler.waiters.add(self)
-
-    def on_message(self, message, binary=False):
-        # print('message received %s' % message)
-        req = json.loads(message)
-        print(req)
-
-        if('data' in req and req['data'] in ['PeData', 'KpData', 'LpData']):
-            self.data_attribute = req['data']
-
-        if('method' in req and req['method'] in ['stream', 'get']):
-            self.method = req['method']
-
-        if(self.method == 'stream'):
-            rd = RossData([self.data_attribute])
-            for sample in WebSocketHandler.cache.data:
-                time.sleep(1)
-                msg = {'data': flatten(rd.fetch(sample))}
-                self.write_message(msg)
-
-        if(self.method == 'stream-test'):
-            rd = RossData([self.data_attribute])
-            sample = WebSocketHandler.cache.data.pop(0)
-            msg = {'data': flatten(rd.fetch(sample))}
-            self.write_message(msg)
-
-        if(self.method == 'get'):
-            data = WebSocketHandler.cache.export_dict(self.data_attribute)
-            schema = {k:type(v).__name__ for k,v in data[0].items()}
-            
-            self.write_message({
-                'data': data,
-                'schema': schema
-            })
-
-    def on_close(self):
-        print('connection closed')
-        WebSocketHandler.waiters.remove(self)
-
-    def check_origin(self, origin):
-        # return True
-        parsed_origin = urllib.parse.urlparse(origin)
-        return parsed_origin.netloc.startswith("localhost:")
-
-    @classmethod
-    def push_updates(cls, data):
-        for waiter in cls.waiters:
-            try:
-                waiter.write_message(data)
-            except:
-                logging.error("Error sending message", exc_info=True)        
 
 class StreamServer(TCPServer):
     sources = set()
@@ -135,8 +78,8 @@ class StreamServer(TCPServer):
 
 class MainHandler(tornado.web.RequestHandler):
     def get(self):
-        self.render("index.html")
-
+        self.render("index.html")        
+        
 class AjaxGetJsonData(tornado.web.RequestHandler):
     def get(self):
         data = WebSocketHandler.cache.export_dict('KpData')
@@ -177,6 +120,13 @@ def main():
     server.listen(options.stream)
     print("Receiving data streams on", 'localhost', options.stream)
     print("HTTP and WebSocket listening on", 'localhost', options.http)
+
+    #automatically restart server on code change.
+    tornado.autoreload.start()
+    for dir, _, files in os.walk('static'):
+        [tornado.autoreload.watch(dir + '/' + f) for f in files if not f.startswith('.')]
+        # need to add something to watch ross-vis/build. 
+        
     tornado.ioloop.IOLoop.current().start()    
 
 if __name__ == "__main__":

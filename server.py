@@ -121,11 +121,19 @@ def main():
     print("Receiving data streams on", 'localhost', options.stream)
     print("HTTP and WebSocket listening on", 'localhost', options.http)
 
+    ross_path = '/'.join(os.path.realpath(__file__).split('/')[:-2])
+
+    watch_paths = dict(
+        vis_path=os.path.join(ross_path, "ross-vis/dist/"),
+        server_path=os.path.join(ross_path, "ross-vis-server")
+    )
+
     #automatically restart server on code change.
     tornado.autoreload.start()
-    for dir, _, files in os.walk('static'):
-        [tornado.autoreload.watch(dir + '/' + f) for f in files if not f.startswith('.')]
-        # need to add something to watch ross-vis/build. 
+    for key, path in watch_paths.items():
+        print("Watching {0} ({1}) for changes".format(key, path))
+        for dir, _, files in os.walk(path):
+            [tornado.autoreload.watch(path + '/' + f) for f in files if not f.startswith('.')]
         
     tornado.ioloop.IOLoop.current().start()    
 

@@ -20,6 +20,7 @@ class Analytics:
         self.data = pd.DataFrame(data)
         if index is not None:
             self.data.set_index(index)
+        print(self.data.columns)
 
     def groupby(self, keys, metric = 'mean'):
         self.groups = self.data.groupby(keys)

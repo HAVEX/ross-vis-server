@@ -17,14 +17,15 @@ class PCAHandler(tornado.web.RequestHandler):
         data = WebSocketHandler.cache.export_dict('KpData')
 
         # parsing the parameters
-        metrics_in_view_byte_format = self.request.arguments.get('metrics[]')        
+        metrics_in_view_byte_format = self.request.arguments.get('metrics[]')
+        metric = metrics_in_view_byte_format[0].decode('utf8').replace("'", "")        
         method_in_byte_format = self.request.arguments.get('method')[0]
         method = method_in_byte_format.decode('utf8').replace("'", "")
-        print("Computing PC components using {0}".format(method))
+        print("Computing PC components for {1} using {0}".format(method, metric))
 
         # analysis
         analysis = Analytics(data, index=['Peid', 'Kpid', 'RealTs', 'LastGvt', 'VirtualTs', 'KpGid', 'EventId'])
-        analysis.groupby(['Peid', 'Kpid'])
+        analysis.groupby(['Peid', str(metric)])
         if method == "PCA":            
             result = analysis.pca(2)
         elif method == "prog_inc_PCA":

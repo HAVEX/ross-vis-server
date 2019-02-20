@@ -13,6 +13,7 @@ from dim_reduction.inc_pca import inc_pca_cpp
 
 # Change point detection methods
 from change_point_detection.ffstream import aff_cpp
+from change_point_detection.pca_stream_cpd import pca_stream_cpd_cpp
 
 class Analytics:
     def __init__(self, data, index):
@@ -21,8 +22,8 @@ class Analytics:
             self.data.set_index(index)
 
     def groupby(self, keys, metric = 'mean'):
-        groups = self.data.groupby(keys)
-        measure = getattr(groups, metric)
+        self.groups = self.data.groupby(keys)
+        measure = getattr(self.groups, metric)
         self.data = measure()
         return self
 
@@ -69,3 +70,50 @@ class Analytics:
     
     def aff_cpd(self):      
         return aff_result
+
+    def pca_stream_cpd_process(self, y_domain):
+        '''
+            Convert the grouped Dataframe into np.array([p1, p2, p3....],
+                                                        [p1, p2, p3....]
+                                                        ,...,...,...,...)
+        '''
+        ret = np.zeros([53,3], dtype=int)
+        temp_key = None
+        idx = 0
+        keys = {}
+        for key, item in self.groups:
+            if temp_key == None:
+                temp_key = key[0]
+            if key[0] != temp_key:
+                temp_key = key[0]
+                idx = idx + 1
+                keys[idx] = temp_key
+                ret[idx][int(key[1])] = self.groups.get_group(key)[y_domain]
+            else:
+                ret[idx][int(key[1])] = self.groups.get_group(key)[y_domain]
+        return ret, keys
+
+    def pca_stream_cpd(self, y_domain):    
+        time_series, groups = self.pca_stream_cpd_process(y_domain)    
+        cpd = PCAStreamCPD(win_size=5)
+        pca_cpd_result = []
+        for i, new_time_point in enumerate(time_series):
+            change = cpd.feed_predict(new_time_point)
+            if change:
+                pca_cpd_result.append(groups[i])
+                print('Change point at {0}'.format(groups[i]))
+        return pca_cpd_result
+
+class PCAStreamCPD(pca_stream_cpd_cpp.PCAStreamCPD):
+    def __init__(self,
+                 win_size,
+                 theta_factor=0.0,
+                 divergence_metric="area",
+                 thres_total_ex_var_ratio=0.99,
+                 delta=0.005,
+                 bin_width_factor=2.0):
+        super().__init__(win_size, theta_factor, divergence_metric,
+                         thres_total_ex_var_ratio, delta, bin_width_factor)
+
+    def feed_predict(self, new_time_point):
+        return super().feed_predict(new_time_point)

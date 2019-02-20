@@ -29,7 +29,6 @@ class PCAHandler(tornado.web.RequestHandler):
             result = analysis.pca(2)
         elif method == "prog_inc_PCA":
             result = analysis.prog_inc_pca(2, 0.1)
-            print(result)
         elif method == "inc_PCA":
             result = analysis.inc_pca()
         elif method == "tsne":

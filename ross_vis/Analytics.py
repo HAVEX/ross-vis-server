@@ -20,7 +20,6 @@ class Analytics:
         self.data = pd.DataFrame(data)
         if index is not None:
             self.data.set_index(index)
-        print(self.data.columns)
 
     def groupby(self, keys, metric = 'mean'):
         self.groups = self.data.groupby(keys)
@@ -37,7 +36,7 @@ class Analytics:
         pca = PCA(n_components)
         std_data = StandardScaler().fit_transform(self.data.values)
         pcs = pca.fit_transform(std_data)
-        pca_result =  pd.DataFrame(data = pcs, columns = ['PC%d'%x for x in range(0, n_components) ])
+        pca_result = pd.DataFrame(data = pcs, columns = ['PC%d'%x for x in range(0, n_components) ])
 
         for pc in pca_result.columns.values:
             self.data[pc] = pca_result[pc].values
@@ -101,7 +100,7 @@ class Analytics:
         for i, new_time_point in enumerate(time_series):
             change = cpd.feed_predict(new_time_point)
             if change:
-                pca_cpd_result.append(groups[i])
+                pca_cpd_result.append(i)
                 print('Change point at {0}'.format(groups[i]))
         return pca_cpd_result
 

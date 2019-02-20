@@ -19,12 +19,17 @@ class CPDHandler(tornado.web.RequestHandler):
         time_domain = self.request.arguments.get('timeDomain')[0].decode('utf8').replace("'","")
         y_domain = self.request.arguments.get('yDomain')[0].decode('utf8').replace("'","")
 
-        print(y_domain, time_domain)
+        print("x-axis :{0}, y-axis: {1}".format(time_domain, y_domain))
 
         analysis = Analytics(data, None)
         analysis.groupby([time_domain, 'Peid'])
 
         result = analysis.pca_stream_cpd(y_domain)
+        schema = {k:type(v).__name__ for k,v in data[0].items()}
+        self.write({
+            'data': result,
+            'schema': schema
+        })
 
 
     def find_change_points_aff(self, time_series, x_attr):

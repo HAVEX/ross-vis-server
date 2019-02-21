@@ -1,6 +1,7 @@
 import urllib
 import json
 import tornado.websocket
+import time
 
 from ross_vis.DataModel import RossData
 from ross_vis.DataCache import RossDataCache
@@ -15,6 +16,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         print('new connection')
         self.data_attribute = 'PeData'
         self.method = 'get' 
+        self.params = None
         WebSocketHandler.waiters.add(self)
 
     def on_message(self, message, binary=False):
@@ -24,7 +26,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if('data' in req and req['data'] in ['PeData', 'KpData', 'LpData']):
             self.data_attribute = req['data']
 
-        if('method' in req and req['method'] in ['stream', 'get']):
+        if('method' in req and req['method'] in ['stream', 'get', 'set']):
             self.method = req['method']
 
         if(self.method == 'stream'):
@@ -43,20 +45,24 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if(self.method == 'get'):
             data = WebSocketHandler.cache.export_dict(self.data_attribute)
             schema = {k:type(v).__name__ for k,v in data[0].items()}
-            
-            self.write_message({
-                'data': data,
-                'schema': schema
-            })
+
+            msg = {'data': data, 'schema': schema}
+            if(self.params != None):
+                msg['params'] = self.params
+            self.write_message(msg)
+
+        if(self.method == 'set'):
+            self.params = req['params']
+            print(self.params)
 
     def on_close(self):
         print('connection closed')
         WebSocketHandler.waiters.remove(self)
 
     def check_origin(self, origin):
-        # return True
-        parsed_origin = urllib.parse.urlparse(origin)
-        return parsed_origin.netloc.startswith("localhost:")
+        return True
+        # parsed_origin = urllib.parse.urlparse(origin)
+        # return parsed_origin.netloc.startswith("localhost:")
 
     @classmethod
     def push_updates(cls, data):

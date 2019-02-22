@@ -5,6 +5,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import pandas as pd
 import numpy as np
+from ross_vis.causality import Causality
 
 # Dimensionality reduction methods
 from dim_reduction.prog_inc_pca import prog_inc_pca_cpp
@@ -17,9 +18,12 @@ from change_point_detection.pca_stream_cpd import pca_stream_cpd_cpp
 
 class Analytics:
     def __init__(self, data, index):
-        self.data = pd.DataFrame(data)
+        self.data = pd.DataFrame(data, columns=index)
         if index is not None:
             self.data.set_index(index)
+
+    def get(self, attr):
+        self.data = self.data[attr]
 
     def groupby(self, keys, metric = 'mean'):
         self.groups = self.data.groupby(keys)
@@ -38,25 +42,29 @@ class Analytics:
         pcs = pca.fit_transform(std_data)
         pca_result = pd.DataFrame(data = pcs, columns = ['PC%d'%x for x in range(0, n_components) ])
 
-        for pc in pca_result.columns.values:
-            self.data[pc] = pca_result[pc].values
+        #for pc in pca_result.columns.values:
+            #@self.data[pc] = pca_result[pc].values
             # self.data = pd.concat([self.data, pca_result], axis=1, sort=False)
-            return pca_result
+        return pca_result
 
-    def prog_inc_pca(self, n_components = 2, forgetting_factor = 1.0):
+    def prog_inc_pca(self, n_components = 2, forgetting_factor = 1.0, attr='RbSec'):
         pca = prog_inc_pca_cpp.ProgIncPCA(2, 1.0)
-        pca.progressive_fit(self.data.values, 10, "random")
-        pcs = pca.transform(self.data.values)
+        print(self.data, self.data.values)
+        table = pd.pivot_table(self.data, values=['RbSec'], index=['KpGid'], columns=['LastGvt'])
+        print(table, table.values)
+        pca.progressive_fit(table.values, 10, "random")
+        pcs = pca.transform(table.values)
+        print(pcs)
         pca.get_loadings()
         pca_result = pd.DataFrame(data = pcs, columns = ['PC%d' %x for x in range(0, n_components) ])
 
-        for pc in pca_result.columns.values:
-            self.data[pc] = pca_result[pc].values
-            return pca_result
+        #for pc in pca_result.columns.values:
+            #self.data[pc] = pca_result[pc].values
+        return pca_result
   
     def inc_pca(self, n_components = 2):
         pca = inc_pca_cpp.IncPCA(2, 1.0)
-        pca.partial_fit(self.data.values)
+        pca.partial_fit(self.data)
         pcs = pca.transform(self.data.values)
         pca_result =  pd.DataFrame(data = pcs, columns = ['PC%d'%x for x in range(0, n_components) ])
 
@@ -71,13 +79,33 @@ class Analytics:
     def aff_cpd(self):      
         return aff_result
 
+    def causality(self):
+        metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
+           'RbSec', 'RbTotal', 'VirtualTimeDiff']
+        data = self.data
+        casuality = Causality()
+        casuality.adaptive_progresive_var_fit(data, latency_limit_in_msec=100)
+        casuality_from, casuality_to = casuality.check_causality('RbSec', signif=0.1)
+        ir_from, ir_to = casuality.impulse_response('RbSec')
+        vd_from, vd_to = casuality.variance_decomp('RbSec')
+
+        print(id_from, vd_from)
+
+        print(pd.DataFrame({
+           'Metrics': metrics,
+           'Causality': causality_from,
+           'IR 1 step later': ir_from[:, 1],
+           'VD 1 step later': vd_from[:, 1]
+        }))  
+
+
     def pca_stream_cpd_process(self, y_domain):
         '''
             Convert the grouped Dataframe into np.array([p1, p2, p3....],
                                                         [p1, p2, p3....]
                                                         ,...,...,...,...)
         '''
-        ret = np.zeros([53,3], dtype=int)
+        ret = np.zeros([1000,8], dtype=int)
         temp_key = None
         idx = 0
         keys = {}
@@ -94,7 +122,8 @@ class Analytics:
         return ret, keys
 
     def pca_stream_cpd(self, y_domain):    
-        time_series, groups = self.pca_stream_cpd_process(y_domain)    
+        time_series, groups = self.pca_stream_cpd_process(y_domain)  
+        print(time_series)  
         cpd = PCAStreamCPD(win_size=5)
         pca_cpd_result = []
         for i, new_time_point in enumerate(time_series):

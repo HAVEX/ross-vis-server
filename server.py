@@ -22,6 +22,7 @@ from ross_vis.Analytics import Analytics
 from cpdHandler import CPDHandler
 from webSocketHandler import WebSocketHandler
 from pcaHandler import PCAHandler
+from causalityHandler import CausalityHandler
 
 define("http", default=8888, help="run on the given port", type=int)
 define("stream", default=8000, help="streaming on the given port", type=int)
@@ -37,7 +38,8 @@ class Application(tornado.web.Application):
             # (r"/pca", AjaxGetPCA),
             (r"/websocket", WebSocketHandler),
             (r"/cpd", CPDHandler),
-            (r"/pca", PCAHandler)
+            (r"/pca", PCAHandler),
+            (r"/causality", CausalityHandler)
         ]
         settings = dict(
             cookie_secret="'a6u^=-sr5ph027bg576b3rl@#^ho5p1ilm!q50h0syyiw#zjxwxy0&gq2j*(ofew0zg03c3cyfvo'",
@@ -64,7 +66,6 @@ class StreamServer(TCPServer):
                 sizeBuf = await stream.read_bytes(RossData.FLATBUFFER_OFFSET_SIZE)
                 size = RossData.size(sizeBuf)
                 data = await stream.read_bytes(size)
-
                 if(size == len(data)):
                     logging.info('received and processed %d bytes', size)
                 else:
@@ -124,7 +125,6 @@ def main():
     ross_path = '/'.join(os.path.realpath(__file__).split('/')[:-2])
 
     watch_paths = dict(
-        vis_path=os.path.join(ross_path, "ross-vis/dist/"),
         server_path=os.path.join(ross_path, "ross-vis-server")
     )
 

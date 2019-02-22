@@ -3,8 +3,9 @@ import tornado.escape
 import json
 import numpy as np
 import pandas as pd
-from ross_vis.Analytics import Analytics
+from ross_vis.ProgAnalytics import ProgAnalytics
 
+import timeit
 from webSocketHandler import WebSocketHandler
 
 class PCAHandler(tornado.web.RequestHandler):
@@ -13,9 +14,14 @@ class PCAHandler(tornado.web.RequestHandler):
         self.set_header("Access-Control-Allow-Headers", "x-requested-with")
         self.set_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
 
-    def get(self):
-        data = WebSocketHandler.cache.export_dict('KpData')
+    def recv(self):
+        return WebSocketHandler.cache.export_dict('KpData')
 
+    def get(self):
+        print('start')
+        t1 = timeit.timeit(self.recv())
+        data = WebSocketHandler.cache.export_dict('KpData')
+        print('data received in {0}'.format(t1))
         # parsing the parameters
         metrics_in_view_byte_format = self.request.arguments.get('metrics[]')
         metric = metrics_in_view_byte_format[0].decode('utf8').replace("'", "")        
@@ -24,16 +30,19 @@ class PCAHandler(tornado.web.RequestHandler):
         print("Computing PC components for {1} using {0}".format(method, metric))
 
         # analysis
-        analysis = Analytics(data, index=['Peid', 'Kpid', 'RealTs', 'LastGvt', 'VirtualTs', 'KpGid', 'EventId'])
-        analysis.groupby(['Peid', str(metric)])
+        print('a')
+        analysis = ProgAnalytics(data, index=['KpGid','RealTs', 'LastGvt', 'VirtualTs', 'RbSec', 'NeventProcessed'])
+        print('b')
+        #analysis.groupby(['KpGid', 'LastGvt'])
         if method == "PCA":            
             result = analysis.pca(2)
         elif method == "prog_inc_PCA":
-            result = analysis.prog_inc_pca(2, 0.1)
+            result = analysis.prog_inc_pca(2, 0.1, str(metric))
         elif method == "inc_PCA":
             result = analysis.inc_pca()
         elif method == "tsne":
             result == analysis.a_tsne()
+        print('c')
         schema = {k:type(v).__name__ for k,v in data[0].items()}
         self.write({
             'data': result.to_dict('records'),

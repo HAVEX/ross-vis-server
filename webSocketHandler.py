@@ -6,8 +6,7 @@ import time
 from ross_vis.DataModel import RossData
 from ross_vis.DataCache import RossDataCache
 from ross_vis.Transform import flatten, flatten_list
-from ross_vis.ProgAnalytics import ProgAnalytics
-
+from ross_vis.ProgAnalytics import StreamData, CPD, PCA, Causal, Clustering
 class WebSocketHandler(tornado.websocket.WebSocketHandler):
     waiters = set()
     cache = RossDataCache()
@@ -20,6 +19,10 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         self.granularity = 'Peid'
         self.metric = 'RbSec'
         self.time_domain = 'LastGvt'
+        self.cpd_method = 'pca_aff'
+        self.pca_method = 'prog_inc'
+        self.causality_method = 'var'
+        self.clustering_method = 'evostream'
         self.data_count = 0
         self.max_data_count = 100
         WebSocketHandler.waiters.add(self)
@@ -40,6 +43,18 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if('timeDomain' in req and req['timeDomain'] in ['LastGvt', 'VirtualTime', 'RealTs']):
             self.time_domain = req['timeDomain']
 
+        if('cpdMethod' in req and req['cpdMethod'] in ['pca_aff', 'pca_stream']):
+            self.cpd_method = req['cpdMethod']
+
+        if('pcaMethod' in req and req['pcaMethod'] in ['prog_inc', 'inc']):
+            self.pca_method = req['pcaMethod']
+
+        if('causalityMethod' in req and req['causalityMethod'] in ['var']):
+            self.causality_method = req['causalityMethod']
+
+        if('clusteringMethod' in req and req['clusteringMethod'] in ['evostream']):
+            self.clustering_method = req['clusteringMethod']
+
         if('metric' in req):
             self.metric = req['metric']   
 
@@ -50,9 +65,17 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     data = flatten(rd.fetch(sample))
                     schema = {k:type(v).__name__ for k,v in data[0].items()}
                     if self.data_count == 0: 
-                        analysis = ProgAnalytics(data, self.granularity, self.metric, self.time_domain)
+                        stream_data = StreamData(data, self.granularity, self.metric, self.time_domain)
+                        cpd = CPD()
+                        pca = PCA()
+                        causal = Causal()
+                        clustering = Clustering()
                     else: 
-                        analysis.update(data, self.granularity, self.metric, self.time_domain)
+                        stream_data.update(data)
+                    cpd.tick(stream_data, self.cpd_method)
+                    pca.tick(stream_data, self.pca_method)
+                    #causal.tick(stream_data, self.causality_method)
+                    clustering.tick(stream_data, self.clustering_method)
                     time.sleep(0.5)
                     msg = {
                         'data': data,
@@ -63,7 +86,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     self.write_message(msg)
                 else:
                     print('writing to csv')
-                    analysis.to_csv()
+                    strean_data.to_csv()
                     self.on_close()
 
         if(self.method == 'stream-test'):

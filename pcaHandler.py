@@ -3,7 +3,7 @@ import tornado.escape
 import json
 import numpy as np
 import pandas as pd
-from ross_vis.ProgAnalytics import ProgAnalytics
+#from ross_vis.ProgAnalytics import 
 
 import timeit
 from webSocketHandler import WebSocketHandler
@@ -18,7 +18,6 @@ class PCAHandler(tornado.web.RequestHandler):
         return WebSocketHandler.cache.export_dict('KpData')
 
     def get(self):
-        print('start')
         t1 = timeit.timeit(self.recv())
         data = WebSocketHandler.cache.export_dict('KpData')
         print('data received in {0}'.format(t1))
@@ -30,9 +29,7 @@ class PCAHandler(tornado.web.RequestHandler):
         print("Computing PC components for {1} using {0}".format(method, metric))
 
         # analysis
-        print('a')
         analysis = ProgAnalytics(data, index=['KpGid','RealTs', 'LastGvt', 'VirtualTs', 'RbSec', 'NeventProcessed'])
-        print('b')
         #analysis.groupby(['KpGid', 'LastGvt'])
         if method == "PCA":            
             result = analysis.pca(2)
@@ -42,7 +39,6 @@ class PCAHandler(tornado.web.RequestHandler):
             result = analysis.inc_pca()
         elif method == "tsne":
             result == analysis.a_tsne()
-        print('c')
         schema = {k:type(v).__name__ for k,v in data[0].items()}
         self.write({
             'data': result.to_dict('records'),

@@ -72,21 +72,23 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                         clustering = Clustering()
                     else: 
                         stream_data.update(data)
-                    cpd.tick(stream_data, self.cpd_method)
-                    pca.tick(stream_data, self.pca_method)
+                    cpd_result = cpd.tick(stream_data, self.cpd_method)
+                    pca_result = pca.tick(stream_data, self.pca_method)
                     #causal.tick(stream_data, self.causality_method)
                     clustering.tick(stream_data, self.clustering_method)
                     time.sleep(0.5)
                     msg = {
                         'data': data,
+                        'cpd' : cpd_result,
+                        'pca': pca_result,
                         'schema': schema
                     }
                     print(self.data_count)
                     self.data_count = self.data_count + 1
                     self.write_message(msg)
                 else:
-                    print('writing to csv')
-                    strean_data.to_csv()
+                    #print('writing to csv')
+                    #stream_data.to_csv()
                     self.on_close()
 
         if(self.method == 'stream-test'):

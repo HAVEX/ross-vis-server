@@ -37,36 +37,36 @@ class StreamData:
         self.time_domain = time_domain
         self.metric = metric
         self.df = pd.DataFrame(data)
-        self.time_df = self.preprocess(self.df)
-        self.new_time_df = self.time_df
-        #if index is not None:
-        #    self.df.set_index(index)    
+        self.metric_df = self.preprocess(self.df)
+        # set new_data_df for the first stream as metric_df
+        self.new_data_df = self.metric_df   
 
     def format(self):
+        # Convert metric_df to ts : { id1: [timeSeries], id2: [timeSeries] }
         ret = {}
-        for idx, row in self.time_df.iterrows():
+        for idx, row in self.metric_df.iterrows():
             values = row.tolist()
             if idx not in ret:
                 ret[idx] = []
             ret[idx].append(values)
         
         return({
-            'data': ret,
+            'ts': ret,
         })
 
-    def groupby(self, keys, metric = 'mean'):
-        self.groups = self.data.groupby(keys)
+    def groupby(self, df, keys, metric = 'mean'):
+        # Groups data by the keys provided
+        self.groups = df.groupby(keys)
         measure = getattr(self.groups, metric)
         self.data = measure()
-        return self
 
-    def preprocess(self, curr_df):
-        groups = curr_df.groupby([self.granularity, self.time_domain])
-        measure = getattr(groups, 'mean')
-        data = measure()
-        table = pd.pivot_table(data, values=[self.metric], index=[self.granularity], columns=[self.time_domain])
+    def preprocess(self, df):
+        # Group the data by granularity (PE, KP, LP) and time. 
+        # Converts into a table and the shape is (number of processing elements, number of time steps)
+        self.groupby(df, [self.granularity, self.time_domain])
+        table = pd.pivot_table(df, values=[self.metric], index=[self.granularity], columns=[self.time_domain])
         column_names = []
-        for name, group in groups:
+        for name, group in self.groups:
             column_names.append(name[1])
         table.columns = [column_names[0]]
         return table
@@ -74,37 +74,44 @@ class StreamData:
     def update(self, new_data):
         new_data_df = pd.DataFrame(new_data)
         self.df = pd.concat([self.df, new_data_df])  
-        self.new_time_df = self.preprocess(new_data_df)
-        self.time_df.reset_index(drop=True, inplace=True)
-        self.new_time_df.reset_index(drop=True, inplace=True)
-        self.time_df = pd.concat([self.time_df, self.new_time_df], axis=1)
+        self.new_data_df = self.preprocess(new_data_df)
+        # To avoid Nan values while concat
+        self.metric_df.reset_index(drop=True, inplace=True)
+        self.new_data_df.reset_index(drop=True, inplace=True)
+        self.metric_df = pd.concat([self.metric_df, self.new_data_df], axis=1)
         self.count = self.count + 1
         return self.format()
 
     def to_csv(self):
-        self.time_df.to_csv('main.csv')
+        # Write the metric_df to a csv file
+        self.metric_df.to_csv(self.metric + '.csv')
 
 
 class CPD(StreamData):
+    # Perform Change point detection on Streaming data.
     def __init__(self):
+        # Stores the change points recorded.
         self.cps = []
+
 
     def tick(self, data, method):
         ret = False
-        self.time_df = data.time_df
+        self.metric_df = data.metric_df
+        self.count = data.count
         self.method = method
         if(self.method == 'pca_stream'):
             ret = self.pca_stream()
-        elif(self.method == 'pca_aff' and self.time_df.shape[1] >= 2):
+        elif(self.method == 'pca_aff' and self.count >= 2):
             ret = self.pca_aff()
         return ret 
 
     def get_change_points(self):
+        # Getter to return the change points.
         return self.cps
 
     def pca_stream(self):    
         cpd = PCAStreamCPD(win_size=5)
-        time_series = self.time_df.T.values
+        time_series = self.metric_df.T.values
         for i, new_time_point in enumerate(time_series):
             change = cpd.feed_predict(new_time_point)
             if change:
@@ -117,10 +124,10 @@ class CPD(StreamData):
         bl = 5
 
         # perform PCA to reduce the dimensions
-        X = np.array(self.time_df)
+        X = np.array(self.metric_df)
         # dft, xt: row: time points (time), col: data points (KPs)
         Xt = X.transpose()
-        dft = self.time_df.transpose()
+        dft = self.metric_df.transpose()
         pca = ProgIncPCA(1)
         pca.progressive_fit(Xt)
         Y = pca.transform(Xt)
@@ -148,8 +155,8 @@ class PCA(StreamData):
         })
 
     def tick(self, data, method):
-        self.time_df = data.time_df
-        self.new_time_df = data.new_time_df
+        self.metric_df = data.metric_df
+        self.new_data_df = data.new_data_df
         self.method = method
         self.count = data.count
 
@@ -170,13 +177,13 @@ class PCA(StreamData):
             
     def prog_inc(self):
         pca = ProgIncPCA(2, 1.0)
-        self.time_series = self.time_df.values
+        self.time_series = self.metric_df.values
         pca.progressive_fit(self.time_series, 10, "random")
         self.pcs_curr = pca.transform(self.time_series) 
         pca.get_loadings()
 
     def prog_inc_update(self):
-        new_time_series = self.new_time_df.values
+        new_time_series = self.new_data_df.values
         self.time_series = np.append(self.time_series, new_time_series, 1)
         pca = ProgIncPCA(2, 1.0)
         pca.progressive_fit(self.time_series, latency_limit_in_msec = 10)
@@ -220,11 +227,10 @@ class Clustering(StreamData):
             'schema': schema
         })
 
-    def tick(self, data, mode):
-        self.time_df = data.time_df
-        self.new_time_df = data.new_time_df
+    def tick(self, data):
+        self.metric_df = data.metric_df
+        self.new_data_df = data.new_data_df
         self.count = data.count 
-        self.mode = mode
         
         if(self.count < 2):
             return
@@ -238,16 +244,15 @@ class Clustering(StreamData):
             self.micro()
             return self.format()
 
-
     def evostream(self):
-        self.time_series = self.time_df.values
+        self.time_series = self.metric_df.values
         self.evo = ProgEvoStream(n_clusters=self.n_clusters, mutation_rate=self.mutation_rate)
         self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec)
         self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
         self.labels = self.evo.predict(self.time_series)
         
     def evostream_update(self):
-        new_time_series = self.new_time_df.values
+        new_time_series = self.new_data_df.values
         self.time_series = np.append(self.time_series, new_time_series, 1)
         self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec, point_choice_method="random", verbose=True)
         self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)

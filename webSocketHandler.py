@@ -2,11 +2,37 @@ import urllib
 import json
 import tornado.websocket
 import time
+import multiprocessing
+from functools import partial
 
 from ross_vis.DataModel import RossData
 from ross_vis.DataCache import RossDataCache
 from ross_vis.Transform import flatten, flatten_list
 from ross_vis.ProgAnalytics import StreamData, CPD, PCA, Causal, Clustering
+
+""" 
+Parallelism wont work because there is no memory sharing. 
+def processWorker(stream_count, algo, time_domain, granularity, stream, metric):
+    if stream_count == 0:  
+        cpd = CPD()
+        pca = PCA()
+        causal = Causal()
+        clustering = Clustering()
+        prop_data = {}
+    else: 
+        prop_data = stream_data.update(stream)
+        cpd_result = cpd.tick(stream_data, algo.cpd)
+        pca_result = pca.tick(stream_data, algo.pca)
+        clustering_result = clustering.tick(stream_data)
+        #causal.tick(stream_data, algo.causality)
+        msg = {
+            '_data': prop_data,
+            'cpd' : cpd_result,
+            'pca': pca_result,
+            'clustering': clustering_result,
+        }
+        return msg  
+ """
 class WebSocketHandler(tornado.websocket.WebSocketHandler):
     waiters = set()
     cache = RossDataCache()
@@ -17,16 +43,50 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         self.data_attribute = 'PeData'
         self.method = 'get' 
         self.granularity = 'Peid'
-        self.metric = 'RbSec'
+        self.metric = ['RbSec', 'NeventProcessed']
         self.time_domain = 'LastGvt'
-        self.cpd_method = 'pca_aff'
-        self.pca_method = 'prog_inc'
-        self.causality_method = 'var'
-        self.clustering_method = 'evostream'
-        self.clustering_mode = 'normal'
-        self.data_count = 0
-        self.max_data_count = 100
+        self.algo = {
+            'cpd': 'pca_aff',
+            'pca': 'prog_inc',
+            'causality': 'var',
+            'clustering': 'evostream',
+        }
+        self.stream_count = 0
+        self.max_stream_count = 10
+        self.stream_objs = {}
         WebSocketHandler.waiters.add(self)
+
+    def process(self, stream):  
+        ret = {}      
+        for idx, metric in enumerate(self.metric):
+            if self.stream_count == 0: 
+                stream_data = StreamData(stream, self.granularity, metric, self.time_domain) 
+                self.stream_objs[metric] = {
+                    'data': stream_data,
+                    'cpd': CPD(),
+                    'pca': PCA(),
+                    'causal': Causal(),
+                    'clustering': Clustering(),
+                }
+                prop_data = {}
+            else: 
+                stream_obj = self.stream_objs[metric]
+                data = stream_obj['data']
+                cpd = stream_obj['cpd']
+                pca = stream_obj['pca']
+                clustering = stream_obj['clustering']
+                prop_data = data.update(stream)
+                cpd_result = cpd.tick(data, self.algo['cpd'])
+                pca_result = pca.tick(data, self.algo['pca'])
+                clustering_result = clustering.tick(data)
+                #self.causal.tick(stream_data, algo.causality)
+                ret[metric] = {
+                    '_data': prop_data,
+                    'cpd' : cpd_result,
+                    'pca': pca_result,
+                    'clustering': clustering_result,
+                }
+        return ret 
 
     def on_message(self, message, binary=False):
         # print('message received %s' % message)
@@ -45,54 +105,40 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             self.time_domain = req['timeDomain']
 
         if('cpdMethod' in req and req['cpdMethod'] in ['pca_aff', 'pca_stream']):
-            self.cpd_method = req['cpdMethod']
+            self.algo.cpd = req['cpdMethod']
 
         if('pcaMethod' in req and req['pcaMethod'] in ['prog_inc', 'inc']):
-            self.pca_method = req['pcaMethod']
+            self.algo.pca = req['pcaMethod']
 
         if('causalityMethod' in req and req['causalityMethod'] in ['var']):
-            self.causality_method = req['causalityMethod']
+            self.algo.causality = req['causalityMethod']
 
         if('clusteringMethod' in req and req['clusteringMethod'] in ['evostream']):
-            self.clustering_method = req['clusteringMethod']
-
-        if('clusteringMode' in req and req['clusteringMode'] in ['normal', 'micro', 'macro']):
-            self.clustering_mode = req['clusteringMode']
+            self.algo.clustering = req['clusteringMethod']
 
         if('metric' in req):
             self.metric = req['metric']   
-
+        
         if(self.method == 'stream'):
             rd = RossData([self.data_attribute])
+            #pool = multiprocessing.Pool()            
             for sample in WebSocketHandler.cache.data:
-                if self.data_count < self.max_data_count:
-                    data = flatten(rd.fetch(sample))
-                    schema = {k:type(v).__name__ for k,v in data[0].items()}
-                    if self.data_count == 0: 
-                        stream_data = StreamData(data, self.granularity, self.metric, self.time_domain)
-                        cpd = CPD()
-                        pca = PCA()
-                        causal = Causal()
-                        clustering = Clustering()
-                        time_data = {}
-                    else: 
-                        time_data = stream_data.update(data)
-                    cpd_result = cpd.tick(stream_data, self.cpd_method)
-                    pca_result = pca.tick(stream_data, self.pca_method)
-                    clustering_result = clustering.tick(stream_data, self.clustering_mode)
-                    #causal.tick(stream_data, self.causality_method)
-                    clustering.tick(stream_data, self.clustering_method)
-                    time.sleep(0.5)
+                if self.stream_count < self.max_stream_count:
+                    stream = flatten(rd.fetch(sample))
+                    schema = {k:type(v).__name__ for k,v in stream[0].items()}
                     msg = {
-                        'data': data,
-                        "time_data": time_data,
-                        'cpd' : cpd_result,
-                        'pca': pca_result,
-                        'clustering': clustering_result,
+                        'data': stream,
+                        'results' : self.process(stream),
                         'schema': schema
                     }
-                    print(self.data_count)
-                    self.data_count = self.data_count + 1
+                    
+                    #stream_data = StreamData(stream, self.granularity, self.time_domain)
+                    #func = partial(process, stream_data, self.data_count, self.algo, self.time_domain, self.granularity, stream)
+                    #msg = pool.map(func, self.metric)
+                    print(self.stream_count)
+                    time.sleep(0.5)
+                    print(msg)
+                    self.stream_count = self.stream_count + 1
                     self.write_message(msg)
                 else:
                     #print('writing to csv')

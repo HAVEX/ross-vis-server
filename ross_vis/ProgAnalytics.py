@@ -5,6 +5,7 @@ import timeit
 # Change point detection methods
 from change_point_detection.ffstream.aff_cpp import AFF
 from change_point_detection.pca_stream_cpd import pca_stream_cpd_cpp
+from change_point_detection.pca_aff_cpd import pca_aff_cpd_cpp
 
 # PCA methods
 from ross_vis.prog_inc_pca import ProgIncPCA
@@ -15,6 +16,27 @@ from ross_vis.prog_evo_stream import ProgEvoStream
 
 # Causality methods
 from ross_vis.causality import Causality
+
+class PCAAFFCPD(pca_aff_cpd_cpp.PCAAFFCPD):
+    def __init__(self,
+                 alpha,
+                 eta=0.01,
+                 burn_in_length=10,
+                 inc_pca_forgetting_factor=1.0):
+        super().__init__(alpha, eta, burn_in_length, inc_pca_forgetting_factor)
+
+    def feed(self, new_time_point):
+        return super().feed(new_time_point)
+
+    def feed_with_pca_result_return(self, new_time_point):
+        return super().feed_with_pca_result_return(new_time_point)
+
+    def predict(self):
+        return super().predict()
+
+    def feed_predict(self, new_time_point):
+        return super().feed_predict(new_time_point)
+
 
 class PCAStreamCPD(pca_stream_cpd_cpp.PCAStreamCPD):
     def __init__(self,
@@ -93,50 +115,74 @@ class CPD(StreamData):
         # Stores the change points recorded.
         self.cps = []
 
-
     def tick(self, data, method):
         ret = False
-        self.metric_df = data.metric_df
+        self.new_data_df = data.new_data_df
         self.count = data.count
         self.method = method
-        if(self.method == 'pca_stream'):
-            ret = self.pca_stream()
-        elif(self.method == 'pca_aff' and self.count >= 2):
-            ret = self.pca_aff()
-        return ret 
+        if(self.count == 1):
+            if(self.method == 'aff'):
+                result = self.aff()
+            elif(self.method == 'stream'):
+                result = self.stream()
+        else:
+            if(self.method == 'aff'):
+                result = self.aff_update()
+            elif(self.method == 'stream'):
+                result = self.stream_update()
+        return result
 
     def get_change_points(self):
         # Getter to return the change points.
         return self.cps
 
-    def pca_stream(self):    
-        cpd = PCAStreamCPD(win_size=5)
-        time_series = self.metric_df.T.values
-        for i, new_time_point in enumerate(time_series):
-            change = cpd.feed_predict(new_time_point)
-            if change:
-                self.cps.append(i)
-        return change
+    def stream(self):    
+        self.stream = PCAStreamCPD(win_size=5)
+        time_series = self.new_data_df.T.values
+        change = self.stream.feed_predict(new_time_point)
+        if change:
+            self.cps.append(0)
+            print('change', 0)
+            return True
+        else:
+            return False
 
-    def pca_aff(self):
-        alpha = 0.05
-        eta = 0.01
-        bl = 5
-
-        # perform PCA to reduce the dimensions
-        X = np.array(self.metric_df)
-        # dft, xt: row: time points (time), col: data points (KPs)
+    def stream_update(self):
+        X = np.array(self.new_data_df)
         Xt = X.transpose()
-        dft = self.metric_df.transpose()
-        pca = ProgIncPCA(1)
-        pca.progressive_fit(Xt)
-        Y = pca.transform(Xt)
+        change = self.stream.feed_predict(Xt)
+        if(change):
+            self.cps.append(self.count)
+            print('Change', self.count)
+            return True
+        else:
+            return False
+
+    def aff(self):
+        alpha = 0.2
+        X = np.array(self.new_data_df)
+        Xt = X.transpose()
         
         # perform adaptive forgetting factor CPD
-        aff = AFF(alpha, eta, bl)
-        change = np.array(aff.process(Y)[0])
-        print(change)
-        return change.tolist()[-1]
+        self.aff = PCAAFFCPD(alpha=alpha)
+        change = self.aff.feed_predict(Xt[0, :])
+        if change:
+            self.cps.append(0)
+            print('change', 0)
+            return True
+        else:
+            return False
+            
+    def aff_update(self):
+        X = np.array(self.new_data_df)
+        Xt = X.transpose()
+        change = self.aff.feed_predict(Xt)
+        if(change):
+            self.cps.append(self.count)
+            print('Change', self.count)
+            return True
+        else:
+            return False
 
 class PCA(StreamData):
     def __init__(self):
@@ -163,7 +209,7 @@ class PCA(StreamData):
         if(self.count < 2):
             pass
         elif(self.count == 2):
-            if(self.method == 'prog_inc'):
+            if(method == 'prog_inc'):
                 self.prog_inc()
             elif(self.method == 'inc'):
                 self.inc()
@@ -265,12 +311,8 @@ class Clustering(StreamData):
 
     def micro(self):
         self.time_series_micro = np.array(self.evo.get_micro_clusters())
-        print(self.time_series_micro)
         self.lables_micro = self.evo.predict(self.time_series_micro)
-        print(self.labels_micro)
         self.labels_micro = [self.current_to_prev[i] for i in self.labels_micro]
-        print(self.labels_micro)
-        
 
 class Causal(StreamData):
     def __init__(self):

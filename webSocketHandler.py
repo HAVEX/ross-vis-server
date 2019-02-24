@@ -46,13 +46,13 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         self.metric = ['RbSec', 'NeventProcessed']
         self.time_domain = 'LastGvt'
         self.algo = {
-            'cpd': 'pca_aff',
+            'cpd': 'aff',
             'pca': 'prog_inc',
             'causality': 'var',
             'clustering': 'evostream',
         }
         self.stream_count = 0
-        self.max_stream_count = 10
+        self.max_stream_count = 109
         self.stream_objs = {}
         WebSocketHandler.waiters.add(self)
 
@@ -104,7 +104,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if('timeDomain' in req and req['timeDomain'] in ['LastGvt', 'VirtualTime', 'RealTs']):
             self.time_domain = req['timeDomain']
 
-        if('cpdMethod' in req and req['cpdMethod'] in ['pca_aff', 'pca_stream']):
+        if('cpdMethod' in req and req['cpdMethod'] in ['aff', 'stream']):
             self.algo.cpd = req['cpdMethod']
 
         if('pcaMethod' in req and req['pcaMethod'] in ['prog_inc', 'inc']):
@@ -124,6 +124,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             #pool = multiprocessing.Pool()            
             for sample in WebSocketHandler.cache.data:
                 if self.stream_count < self.max_stream_count:
+                    print(self.stream_count)
                     stream = flatten(rd.fetch(sample))
                     schema = {k:type(v).__name__ for k,v in stream[0].items()}
                     msg = {
@@ -131,13 +132,11 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                         'results' : self.process(stream),
                         'schema': schema
                     }
-                    
                     #stream_data = StreamData(stream, self.granularity, self.time_domain)
                     #func = partial(process, stream_data, self.data_count, self.algo, self.time_domain, self.granularity, stream)
                     #msg = pool.map(func, self.metric)
-                    print(self.stream_count)
                     time.sleep(0.5)
-                    print(msg)
+                    #print(msg)
                     self.stream_count = self.stream_count + 1
                     self.write_message(msg)
                 else:

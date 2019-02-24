@@ -37,9 +37,6 @@ class Application(tornado.web.Application):
             (r"/data", AjaxGetJsonData),
             # (r"/pca", AjaxGetPCA),
             (r"/websocket", WebSocketHandler),
-            (r"/cpd", CPDHandler),
-            (r"/pca", PCAHandler),
-            (r"/causality", CausalityHandler)
         ]
         settings = dict(
             cookie_secret="'a6u^=-sr5ph027bg576b3rl@#^ho5p1ilm!q50h0syyiw#zjxwxy0&gq2j*(ofew0zg03c3cyfvo'",

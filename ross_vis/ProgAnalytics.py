@@ -64,17 +64,17 @@ class StreamData:
         self.new_data_df = self.metric_df   
 
     def format(self):
-        # Convert metric_df to ts : { id1: [timeSeries], id2: [timeSeries] }
+        # Convert metric_df to ts : { id1: [timeSeries], id2: [timeSeries] }    
+        #df = pd.melt(self.metric_df, id_vars=['id'], var_name=self.time_domain , value_name=self.metric)
+        #df.reset_index(level=0, inplace=True)
+        #print(df)
         ret = {}
         for idx, row in self.metric_df.iterrows():
             values = row.tolist()
             if idx not in ret:
                 ret[idx] = []
             ret[idx].append(values)
-        
-        return({
-            'ts': ret,
-        })
+        return ret
 
     def groupby(self, df, keys, metric = 'mean'):
         # Groups data by the keys provided
@@ -85,12 +85,13 @@ class StreamData:
     def preprocess(self, df):
         # Group the data by granularity (PE, KP, LP) and time. 
         # Converts into a table and the shape is (number of processing elements, number of time steps)
+        df['id'] = df[self.granularity]
         self.groupby(df, [self.granularity, self.time_domain])
-        table = pd.pivot_table(df, values=[self.metric], index=[self.granularity], columns=[self.time_domain])
+        table = pd.pivot_table(df, values=[self.metric, 'id'], index=[self.granularity], columns=[self.time_domain])
         column_names = []
-        for name, group in self.groups:            
+        for name, group in self.groups:   
             column_names.append(name[1])
-        table.columns = [column_names[0]]
+        table.columns = [column_names[0], 'id']
         return table
 
     def processByMetric(self, df, metric):
@@ -110,6 +111,7 @@ class StreamData:
         self.metric_df.reset_index(drop=True, inplace=True)
         self.new_data_df.reset_index(drop=True, inplace=True)
         self.metric_df = pd.concat([self.metric_df, self.new_data_df], axis=1)
+        print(self.metric_df)
         self.count = self.count + 1
         return self.format()
 

@@ -119,6 +119,7 @@ def main():
     ross_path = '/'.join(os.path.realpath(__file__).split('/')[:-2])
 
     watch_paths = dict(
+        client_path = os.path.join(ross_path, "ross-vis/dist/"),
         server_path=os.path.join(ross_path, "ross-vis-server")
     )
 

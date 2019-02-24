@@ -52,7 +52,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             'clustering': 'evostream',
         }
         self.stream_count = 0
-        self.max_stream_count = 109
+        self.max_stream_count = 3
         self.stream_objs = {}
         WebSocketHandler.waiters.add(self)
 
@@ -60,7 +60,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         ret = {}      
         for idx, metric in enumerate(self.metric):
             if self.stream_count == 0: 
-                stream_data = StreamData(stream, self.granularity, metric, self.time_domain) 
+                stream_data = StreamData(stream, self.granularity, metric, self.time_domain)
                 self.stream_objs[metric] = {
                     'data': stream_data,
                     'cpd': CPD(),
@@ -81,13 +81,17 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 pca_result = pca.tick(data, self.algo['pca'])
                 clustering_result = clustering.tick(data)
                 causality_result = causal.tick(data, self.algo['causality'])
+                print(prop_data)
                 ret[metric] = {
-                    '_data': prop_data,
+                    'ts': prop_data,
                     'cpd' : cpd_result,
                     'pca': pca_result,
                     'clustering': clustering_result,
-                    'causality': causality_result
+                    'causality': causality_result,
                 }
+                schema = {k:type(v).__name__ for k,v in ret[metric].items()}
+                ret[metric]['schema'] = schema
+
         return ret 
 
     def on_message(self, message, binary=False):
@@ -129,6 +133,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     print(self.stream_count)
                     stream = flatten(rd.fetch(sample))
                     schema = {k:type(v).__name__ for k,v in stream[0].items()}
+                    print(stream[0])
                     msg = {
                         'data': stream,
                         'results' : self.process(stream),

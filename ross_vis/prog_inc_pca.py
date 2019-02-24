@@ -161,7 +161,8 @@ class ProgIncPCA(prog_inc_pca_cpp.ProgIncPCA):
         self : object
             Returns the instance itself.
         """
-        super().progressive_fit(X, latency_limit_in_msec, point_choice_method)
+        super().progressive_fit(X, latency_limit_in_msec, point_choice_method,
+                                verbose)
 
     def partial_fit(self, X):
         """Incremental fit with new datapoints, X. With this, PCs are updated

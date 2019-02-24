@@ -88,9 +88,18 @@ class StreamData:
         self.groupby(df, [self.granularity, self.time_domain])
         table = pd.pivot_table(df, values=[self.metric], index=[self.granularity], columns=[self.time_domain])
         column_names = []
-        for name, group in self.groups:
+        for name, group in self.groups:            
             column_names.append(name[1])
         table.columns = [column_names[0]]
+        return table
+
+    def processByMetric(self, df, metric):
+        self.groupby(df, [self.granularity, self.time_domain])
+        table = pd.pivot_table(df, values=[metric], index=[self.granularity], columns=[self.time_domain])
+        column_names = []
+        for name, group in self.groups:
+            column_names.append(name[1])
+        table.columns = list(set(column_names))
         return table
 
     def update(self, new_data):
@@ -318,21 +327,62 @@ class Causal(StreamData):
     def __init__(self):
         pass
 
+    def numpybool_to_bool(self, arr):
+        ret = []
+        for idx, val in enumerate(arr):
+            if(val == True):
+                ret.append(1)
+            elif(val == False):
+                ret.append(0)
+            else:
+                ret.append(-1)
+        return ret
+
     def tick(self, data, method):
         self.df = data.df
+        self.metric = data.metric
         metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
+           'RbSec', 'RbTotal', 'VirtualTimeDiff', 'KpGid', 'LastGvt', 'Peid']
+
+        calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
            'RbSec', 'RbTotal', 'VirtualTimeDiff']
-        casuality = Causality()
-        casuality.adaptive_progresive_var_fit(self.df, latency_limit_in_msec=100)
-        casuality_from, casuality_to = casuality.check_causality('RbSec', signif=0.1)
-        ir_from, ir_to = casuality.impulse_response('RbSec')
-        vd_from, vd_to = casuality.variance_decomp('RbSec')
 
-        print(id_from, vd_from)
+        pca = ProgIncPCA(1)
+        total_latency_for_pca = 100
+        latency_for_each = int(total_latency_for_pca/len(metrics))
+        X_dict = {}
+        self.df = self.df[metrics]
 
-        print(pd.DataFrame({
-           'Metrics': metrics,
-           'Causality': causality_from,
-           'IR 1 step later': ir_from[:, 1],
-           'VD 1 step later': vd_from[:, 1]
-        }))  
+        for metric in calc_metrics:
+            metric_nd = data.processByMetric(self.df, metric).values
+            pca.progressive_fit(metric_nd, latency_limit_in_msec=latency_for_each, point_choice_method='random', verbose=True)
+            metric_ld = pca.transform(metric_nd)
+            X_dict[metric] = metric_ld.flatten().tolist()
+        X = pd.DataFrame(X_dict)
+
+        causality = Causality()
+        causality.adaptive_progresive_var_fit(X, latency_limit_in_msec=100, point_choice_method="reverse")
+        causality_from, causality_to = causality.check_causality('RbSec', signif=0.1)
+        ir_from, ir_to = causality.impulse_response('RbSec')
+        vd_from, vd_to = causality.variance_decomp('RbSec')
+
+        from_result = pd.DataFrame({
+           'metrics': calc_metrics,
+           'causality': self.numpybool_to_bool(causality_from),
+           'IR_1': ir_from[:, 1],
+           'VD_1': vd_from[:, 1]
+        })
+
+        to_result = pd.DataFrame({
+            'metrics': calc_metrics,
+            'causality': self.numpybool_to_bool(causality_to),
+            'IR_1': ir_to[:, 1],
+            'VD_1': vd_to[:, 1]            
+        })
+
+        return {
+            'from': from_result.to_dict('records'),
+            'to': to_result.to_dict('records')
+        }
+
+

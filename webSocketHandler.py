@@ -75,16 +75,18 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 cpd = stream_obj['cpd']
                 pca = stream_obj['pca']
                 clustering = stream_obj['clustering']
+                causal = stream_obj['causal']
                 prop_data = data.update(stream)
                 cpd_result = cpd.tick(data, self.algo['cpd'])
                 pca_result = pca.tick(data, self.algo['pca'])
                 clustering_result = clustering.tick(data)
-                #self.causal.tick(stream_data, algo.causality)
+                causality_result = causal.tick(data, self.algo['causality'])
                 ret[metric] = {
                     '_data': prop_data,
                     'cpd' : cpd_result,
                     'pca': pca_result,
                     'clustering': clustering_result,
+                    'causality': causality_result
                 }
         return ret 
 

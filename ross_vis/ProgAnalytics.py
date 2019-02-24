@@ -5,8 +5,15 @@ import timeit
 # Change point detection methods
 from change_point_detection.ffstream.aff_cpp import AFF
 from change_point_detection.pca_stream_cpd import pca_stream_cpd_cpp
-from ross_vis.prog_inc_pca import ProgIncPCA
 
+# PCA methods
+from ross_vis.prog_inc_pca import ProgIncPCA
+#from ross_vis.inc_pca import IncPCA
+
+# Clustering methods
+from ross_vis.prog_evo_stream import ProgEvoStream
+
+# Causality methods
 from ross_vis.causality import Causality
 
 class PCAStreamCPD(pca_stream_cpd_cpp.PCAStreamCPD):
@@ -128,14 +135,14 @@ class PCA(StreamData):
         })
 
     def tick(self, data, method):
-        ret = np.array([])
-        self.df = data.df
         self.time_df = data.time_df
         self.new_time_df = data.new_time_df
         self.method = method
-        if(self.time_df.shape[1] < 2):
+        self.count = data.count
+
+        if(self.count < 2):
             pass
-        elif(self.time_df.shape[1] == 2):
+        elif(self.count == 2):
             if(self.method == 'prog_inc'):
                 self.prog_inc()
             elif(self.method == 'inc'):
@@ -145,7 +152,7 @@ class PCA(StreamData):
             if(self.method == 'prog_inc'):
                 self.prog_inc_update()
             elif(self.method == 'inc'):
-                ret = self.inc()
+                self.inc()
             return self.format()
             
     def prog_inc(self):
@@ -175,6 +182,76 @@ class PCA(StreamData):
     def inc_update(self):
         pass
 
+
+class Clustering(StreamData):
+    def __init__(self):
+        self.n_clusters = 3
+        self.mutation_rate = 0.1
+        self.fit_latency_limit_in_msec = 10
+        self.refine_latency_limit_in_msec = 30
+        self.labels = np.array([])
+        self.labels_macro = np.array([])
+        self.labels_micro = np.array([])
+
+
+    def format(self):
+        normal_result = pd.DataFrame.from_dict({'data' : np.asmatrix(self.time_series).tolist(), 'clusters': self.labels }, orient='index')
+        micro_result = pd.DataFrame.from_dict({'data' : np.asmatrix(self.time_series_micro).tolist(), 'clusters': self.labels_micro }, orient='index')
+        macro_result = pd.DataFrame.from_dict({'data' : np.asmatrix(self.time_series_macro).tolist(), 'clusters': self.labels_macro }, orient='index')
+        
+        schema = {k:type(v).__name__ for k,v in normal_result.items()}
+        return({
+            'normal': normal_result.to_dict('records'),
+            'micro': micro_result.to_dict('records'),
+            'macro': macro_result.to_dict('records'),
+            'schema': schema
+        })
+
+    def tick(self, data, mode):
+        self.time_df = data.time_df
+        self.new_time_df = data.new_time_df
+        self.count = data.count 
+        self.mode = mode
+        
+        if(self.count < 2):
+            return
+
+        if(self.count == 2):
+            self.evostream()
+            return
+        elif(self.count > 2):
+            self.evostream_update()
+            self.macro()
+            self.micro()
+            return self.format()
+
+
+    def evostream(self):
+        self.time_series = self.time_df.values
+        self.evo = ProgEvoStream(n_clusters=self.n_clusters, mutation_rate=self.mutation_rate)
+        self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec)
+        self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
+        self.labels = self.evo.predict(self.time_series)
+        
+    def evostream_update(self):
+        new_time_series = self.new_time_df.values
+        self.time_series = np.append(self.time_series, new_time_series, 1)
+        #print(self.time_series.shape)
+        self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec)
+        self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
+        self.labels, self.current_to_prev = ProgEvoStream.consistent_labels(self.labels, self.evo.predict(self.time_series))
+    
+    def macro(self):
+        #print(self.count)
+        self.time_series_macro = np.array(self.evo.get_macro_clusters())
+        #print(self.time_series_macro.shape, self.time_series_macro)
+        self.labels_macro = [self.current_to_prev[i] for i in range(self.time_series_macro.shape[0])]
+
+    def micro(self):
+        self.time_series_micro = np.array(self.evo.get_micro_clusters())
+        self.lables_micro = self.evo.predict(self.time_series_micro)
+        self.labels_micro = [self.current_to_prev[i] for i in self.labels_micro]
+
 class Causal(StreamData):
     def __init__(self):
         pass
@@ -197,10 +274,3 @@ class Causal(StreamData):
            'IR 1 step later': ir_from[:, 1],
            'VD 1 step later': vd_from[:, 1]
         }))  
-
-class Clustering(StreamData):
-    def __init__(self):
-        pass
-
-    def tick(self, data, method):
-        pass

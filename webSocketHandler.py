@@ -23,6 +23,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         self.pca_method = 'prog_inc'
         self.causality_method = 'var'
         self.clustering_method = 'evostream'
+        self.clustering_mode = 'normal'
         self.data_count = 0
         self.max_data_count = 100
         WebSocketHandler.waiters.add(self)
@@ -55,6 +56,9 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if('clusteringMethod' in req and req['clusteringMethod'] in ['evostream']):
             self.clustering_method = req['clusteringMethod']
 
+        if('clusteringMode' in req and req['clusteringMode'] in ['normal', 'micro', 'macro']):
+            self.clustering_mode = req['clusteringMode']
+
         if('metric' in req):
             self.metric = req['metric']   
 
@@ -74,6 +78,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                         stream_data.update(data)
                     cpd_result = cpd.tick(stream_data, self.cpd_method)
                     pca_result = pca.tick(stream_data, self.pca_method)
+                    clustering_result = clustering.tick(stream_data, self.clustering_mode)
                     #causal.tick(stream_data, self.causality_method)
                     clustering.tick(stream_data, self.clustering_method)
                     time.sleep(0.5)
@@ -81,6 +86,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                         'data': data,
                         'cpd' : cpd_result,
                         'pca': pca_result,
+                        'clustering': clustering_result,
                         'schema': schema
                     }
                     print(self.data_count)

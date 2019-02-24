@@ -74,8 +74,9 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                         pca = PCA()
                         causal = Causal()
                         clustering = Clustering()
+                        time_data = {}
                     else: 
-                        stream_data.update(data)
+                        time_data = stream_data.update(data)
                     cpd_result = cpd.tick(stream_data, self.cpd_method)
                     pca_result = pca.tick(stream_data, self.pca_method)
                     clustering_result = clustering.tick(stream_data, self.clustering_mode)
@@ -84,6 +85,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     time.sleep(0.5)
                     msg = {
                         'data': data,
+                        "time_data": time_data,
                         'cpd' : cpd_result,
                         'pca': pca_result,
                         'clustering': clustering_result,

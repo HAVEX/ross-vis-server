@@ -41,7 +41,19 @@ class StreamData:
         self.new_time_df = self.time_df
         #if index is not None:
         #    self.df.set_index(index)    
+
+    def format(self):
+        ret = {}
+        for idx, row in self.time_df.iterrows():
+            values = row.tolist()
+            if idx not in ret:
+                ret[idx] = []
+            ret[idx].append(values)
         
+        return({
+            'data': ret,
+        })
+
     def groupby(self, keys, metric = 'mean'):
         self.groups = self.data.groupby(keys)
         measure = getattr(self.groups, metric)
@@ -67,6 +79,7 @@ class StreamData:
         self.new_time_df.reset_index(drop=True, inplace=True)
         self.time_df = pd.concat([self.time_df, self.new_time_df], axis=1)
         self.count = self.count + 1
+        return self.format()
 
     def to_csv(self):
         self.time_df.to_csv('main.csv')
@@ -236,21 +249,23 @@ class Clustering(StreamData):
     def evostream_update(self):
         new_time_series = self.new_time_df.values
         self.time_series = np.append(self.time_series, new_time_series, 1)
-        #print(self.time_series.shape)
-        self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec)
+        self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec, point_choice_method="random", verbose=True)
         self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
-        self.labels, self.current_to_prev = ProgEvoStream.consistent_labels(self.labels, self.evo.predict(self.time_series))
-    
+        #self.labels, self.current_to_prev = ProgEvoStream.consistent_labels(self.labels, self.evo.predict(self.time_series))
+        self.labels, self.current_to_prev = self.labels, self.evo.predict(self.time_series)
+
     def macro(self):
-        #print(self.count)
         self.time_series_macro = np.array(self.evo.get_macro_clusters())
-        #print(self.time_series_macro.shape, self.time_series_macro)
         self.labels_macro = [self.current_to_prev[i] for i in range(self.time_series_macro.shape[0])]
 
     def micro(self):
         self.time_series_micro = np.array(self.evo.get_micro_clusters())
+        print(self.time_series_micro)
         self.lables_micro = self.evo.predict(self.time_series_micro)
+        print(self.labels_micro)
         self.labels_micro = [self.current_to_prev[i] for i in self.labels_micro]
+        print(self.labels_micro)
+        
 
 class Causal(StreamData):
     def __init__(self):

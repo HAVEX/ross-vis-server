@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import timeit
+from collections import defaultdict
+
 
 # Change point detection methods
 from change_point_detection.ffstream.aff_cpp import AFF
@@ -61,37 +63,42 @@ class StreamData:
         self.df = pd.DataFrame(data)
         self.metric_df = self.preprocess(self.df)
         # set new_data_df for the first stream as metric_df
-        self.new_data_df = self.metric_df   
+        self.new_data_df = self.metric_df
+  
+
+    def _format(self):
+        # Convert metric_df to ts : { id1: [timeSeries], id2: [timeSeries] }    
+        ret = {}
+        columns = self.metric_df.columns.get_level_values(level=self.time_domain).tolist()
+        ids = self.metric_df.T.columns.tolist()
+        for i in ids:
+            ret[i] = self.metric_df.T[(i)].tolist()
+        ret_df = pd.DataFrame.from_dict(ret)
+        schema = {k:type(v).__name__ for k,v in ret_df[0].items()}
+        return({
+            'data': ret,
+            'schema': schema
+        })
 
     def format(self):
-        # Convert metric_df to ts : { id1: [timeSeries], id2: [timeSeries] }    
-        #df = pd.melt(self.metric_df, id_vars=['id'], var_name=self.time_domain , value_name=self.metric)
-        #df.reset_index(level=0, inplace=True)
-        #print(df)
-        ret = {}
-        for idx, row in self.metric_df.iterrows():
-            values = row.tolist()
-            if idx not in ret:
-                ret[idx] = []
-            ret[idx].append(values)
-        return ret
+        schema = {k:type(v).__name__ for k, v in self.df.items()}
+        return({
+            'data':self.df.to_dict('records'),
+            'schema': schema
+        })
 
     def groupby(self, df, keys, metric = 'mean'):
         # Groups data by the keys provided
         self.groups = df.groupby(keys)
         measure = getattr(self.groups, metric)
-        self.data = measure()
+        self.data = measure() 
 
     def preprocess(self, df):
         # Group the data by granularity (PE, KP, LP) and time. 
         # Converts into a table and the shape is (number of processing elements, number of time steps)
-        df['id'] = df[self.granularity]
         self.groupby(df, [self.granularity, self.time_domain])
-        table = pd.pivot_table(df, values=[self.metric, 'id'], index=[self.granularity], columns=[self.time_domain])
-        column_names = []
-        for name, group in self.groups:   
-            column_names.append(name[1])
-        table.columns = [column_names[0], 'id']
+        table = pd.pivot_table(df, values=[self.metric], index=[self.granularity], columns=[self.time_domain])
+        self.current_time = table.columns
         return table
 
     def processByMetric(self, df, metric):
@@ -105,19 +112,18 @@ class StreamData:
 
     def update(self, new_data):
         new_data_df = pd.DataFrame(new_data)
-        self.df = pd.concat([self.df, new_data_df])  
+        self.df = pd.concat([self.df, new_data_df]) 
         self.new_data_df = self.preprocess(new_data_df)
         # To avoid Nan values while concat
         self.metric_df.reset_index(drop=True, inplace=True)
         self.new_data_df.reset_index(drop=True, inplace=True)
-        self.metric_df = pd.concat([self.metric_df, self.new_data_df], axis=1)
-        print(self.metric_df)
+        self.metric_df = pd.concat([self.metric_df, self.new_data_df], axis=1).T.drop_duplicates().T
         self.count = self.count + 1
         return self.format()
 
     def to_csv(self):
         # Write the metric_df to a csv file
-        self.metric_df.to_csv(self.metric + '.csv')
+        self.df.to_csv(self.metric + '.csv')
 
 
 class CPD(StreamData):
@@ -130,6 +136,8 @@ class CPD(StreamData):
         ret = False
         self.new_data_df = data.new_data_df
         self.count = data.count
+        self.metric = data.metric
+        self.current_time = data.current_time
         self.method = method
         if(self.count == 1):
             if(self.method == 'aff'):
@@ -185,8 +193,8 @@ class CPD(StreamData):
             return False
             
     def aff_update(self):
-        X = np.array(self.new_data_df)
-        Xt = X.transpose()
+        X = np.array(self.new_data_df[self.current_time])
+        Xt = X.transpose() 
         change = self.aff.feed_predict(Xt)
         if(change):
             self.cps.append(self.count)

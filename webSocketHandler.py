@@ -52,7 +52,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             'clustering': 'evostream',
         }
         self.stream_count = 0
-        self.max_stream_count = 3
+        self.max_stream_count = 30
         self.stream_objs = {}
         WebSocketHandler.waiters.add(self)
 
@@ -77,11 +77,12 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 clustering = stream_obj['clustering']
                 causal = stream_obj['causal']
                 prop_data = data.update(stream)
+               # print(prop_data)
                 cpd_result = cpd.tick(data, self.algo['cpd'])
                 pca_result = pca.tick(data, self.algo['pca'])
                 clustering_result = clustering.tick(data)
                 causality_result = causal.tick(data, self.algo['causality'])
-                print(prop_data)
+                print(cpd_result)
                 ret[metric] = {
                     'ts': prop_data,
                     'cpd' : cpd_result,
@@ -130,12 +131,11 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             #pool = multiprocessing.Pool()            
             for sample in WebSocketHandler.cache.data:
                 if self.stream_count < self.max_stream_count:
-                    print(self.stream_count)
+                    print("Stream :",self.stream_count)
                     stream = flatten(rd.fetch(sample))
                     schema = {k:type(v).__name__ for k,v in stream[0].items()}
-                    print(stream[0])
                     msg = {
-                        'data': stream,
+                        'stream': stream,
                         'results' : self.process(stream),
                         'schema': schema
                     }
@@ -143,12 +143,12 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     #func = partial(process, stream_data, self.data_count, self.algo, self.time_domain, self.granularity, stream)
                     #msg = pool.map(func, self.metric)
                     time.sleep(0.5)
-                    #print(msg)
                     self.stream_count = self.stream_count + 1
                     self.write_message(msg)
                 else:
-                    #print('writing to csv')
-                    #stream_data.to_csv()
+                    for idx, metric in enumerate(self.metric):
+                        print('writing {0} attribute to {0}.csv'.format(metric))
+                        self.stream_objs[metric]['data'].to_csv()
                     self.on_close()
 
         if(self.method == 'stream-test'):
@@ -160,7 +160,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if(self.method == 'get'):
             data = WebSocketHandler.cache.export_dict(self.data_attribute)
             schema = {k:type(v).__name__ for k,v in data[0].items()}
-            
             self.write_message({
                 'data': data,
                 'schema': schema

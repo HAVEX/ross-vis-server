@@ -167,7 +167,6 @@ class Causality():
         '''
         self.var_result = VAR(endog).fit(
             maxlags=maxlags, ic=ic, verbose=verbose, trend=trend)
-        print('a', self.var_result.neqs)
 
     def adaptive_progresive_var_fit(self,
                                     endog,
@@ -320,7 +319,6 @@ class Causality():
             print("Need to apply var_fit before check_causality")
         else:
             d = self.var_result.neqs
-            print(d)
             caused_by = [
                 self.var_result.test_causality(
                     caused=target, causing=i, kind=kind).pvalue < signif

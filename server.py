@@ -9,6 +9,7 @@ import os.path
 import uuid
 import struct
 import time
+import warnings
 
 from tornado.options import define, options
 from tornado.tcpserver import TCPServer
@@ -25,6 +26,8 @@ define("http", default=8888, help="run on the given port", type=int)
 define("stream", default=8000, help="streaming on the given port", type=int)
 define("appdir", default="../app/dist", help="serving app in given directory", type=str)
 define("datafile", default='', help="load data from file", type=str)
+
+warnings.filterwarnings('ignore')
 
 class Application(tornado.web.Application):
     def __init__(self, appdir = 'app'):

@@ -3,7 +3,6 @@ import numpy as np
 import timeit
 from collections import defaultdict
 
-
 # Change point detection methods
 from change_point_detection.ffstream.aff_cpp import AFF
 from change_point_detection.pca_stream_cpd import pca_stream_cpd_cpp
@@ -64,7 +63,10 @@ class StreamData:
         self.metric_df = self.preprocess(self.df)
         # set new_data_df for the first stream as metric_df
         self.new_data_df = self.metric_df
-  
+        self.cpd = CPD()
+        self.pca = PCA()
+        self.causal = Causal()
+        self.clustering = Clustering()
 
     def _format(self):
         # Convert metric_df to ts : { id1: [timeSeries], id2: [timeSeries] }    
@@ -81,9 +83,9 @@ class StreamData:
         })
 
     def format(self):
-        schema = {k:type(v).__name__ for k, v in self.df.items()}
+        schema = {k:type(v).__name__ for k,v in self.df.items()}
         return({
-            'data':self.df.to_dict('records'),
+            'data': self.df.to_dict('records'),
             'schema': schema
         })
 
@@ -110,6 +112,9 @@ class StreamData:
         table.columns = list(set(column_names))
         return table
 
+    def drop_prev_results(self, attrs): 
+        self.df.drop(attrs, axis=1, inplace =True)
+
     def update(self, new_data):
         new_data_df = pd.DataFrame(new_data)
         self.df = pd.concat([self.df, new_data_df]) 
@@ -119,6 +124,29 @@ class StreamData:
         self.new_data_df.reset_index(drop=True, inplace=True)
         self.metric_df = pd.concat([self.metric_df, self.new_data_df], axis=1).T.drop_duplicates().T
         self.count = self.count + 1
+        return self     
+
+    def clean_up(self):
+        if(self.count > 2):
+            self.drop_prev_results(['PC0','PC1'])
+        if(self.count > 3):
+            self.drop_prev_results(['normal', 'normal_clusters'])
+        if(self.count > 2):
+            self.drop_prev_results(['from_metrics','from_causality','from_IR_1', 'from_VD_1',
+                                    'to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'
+            ])
+
+    def run_methods(self, data, algo):
+        self.clean_up()
+        #self.df['cpd'] = self.cpd.tick(data, algo['cpd'])
+        pca_result = self.pca.tick(data, algo['pca'])
+        self.df = self.df.join(pca_result)
+        causal_result = self.causal.tick(data, algo['causality'])
+        self.df = self.df.join(causal_result)
+        clustering_result = self.clustering.tick(data)
+        if(self.count > 2):
+            self.df = self.df.join(clustering_result)
+        self.df = self.df.fillna(0)
         return self.format()
 
     def to_csv(self):
@@ -193,6 +221,7 @@ class CPD(StreamData):
             return False
             
     def aff_update(self):
+        print(self.aff)
         X = np.array(self.new_data_df[self.current_time])
         Xt = X.transpose() 
         change = self.aff.feed_predict(Xt)
@@ -219,6 +248,9 @@ class PCA(StreamData):
             'schema': schema
         })
 
+    def _format(self):
+        return pd.DataFrame(data = self.pcs_curr, columns = ['PC%d' %x for x in range(0, self.n_components)])
+
     def tick(self, data, method):
         self.metric_df = data.metric_df
         self.new_data_df = data.new_data_df
@@ -232,13 +264,13 @@ class PCA(StreamData):
                 self.prog_inc()
             elif(self.method == 'inc'):
                 self.inc()
-            return self.format()
+            return self._format()
         else:
             if(self.method == 'prog_inc'):
                 self.prog_inc_update()
             elif(self.method == 'inc'):
                 self.inc()
-            return self.format()
+            return self._format()
             
     def prog_inc(self):
         pca = ProgIncPCA(2, 1.0)
@@ -280,17 +312,23 @@ class Clustering(StreamData):
 
 
     def format(self):
-        normal_result = pd.DataFrame.from_dict({'data' : np.asmatrix(self.time_series).tolist(), 'clusters': self.labels }, orient='index')
-        micro_result = pd.DataFrame.from_dict({'data' : np.asmatrix(self.time_series_micro).tolist(), 'clusters': self.labels_micro }, orient='index')
-        macro_result = pd.DataFrame.from_dict({'data' : np.asmatrix(self.time_series_macro).tolist(), 'clusters': self.labels_macro }, orient='index')
+        normal_result = pd.DataFrame.from_dict({'normal' : np.asmatrix(self.time_series).tolist(), 'normal_labels': self.labels }, orient='index')
+        micro_result = pd.DataFrame.from_dict({'micro' : np.asmatrix(self.time_series_micro).tolist(), 'micro_labels': self.labels_micro }, orient='index')
+        macro_result = pd.DataFrame.from_dict({'macro' : np.asmatrix(self.time_series_macro).tolist(), 'macro_labels': self.labels_macro }, orient='index')
         
-        schema = {k:type(v).__name__ for k,v in normal_result.items()}
         return({
-            'normal': normal_result.to_dict('records'),
-            'micro': micro_result.to_dict('records'),
-            'macro': macro_result.to_dict('records'),
-            'schema': schema
+            'normal': normal_result,
+            'micro': micro_result,
         })
+        print(normal_result.shape, micro_result.shape, macro_result.shape)
+
+    def _format(self):
+        micro = [(self.time_series_micro.tolist(), self.labels_micro)]
+        macro = [(self.time_series_macro.tolist(), self.labels_macro)]
+        micro_result = pd.DataFrame(data=micro, columns=['micro','micro_clusters'],)
+        macro_result = pd.DataFrame(data=macro, columns=['macro', 'macro_clusters'])
+        normal_result = pd.DataFrame.from_dict({'normal': np.asmatrix(self.time_series).tolist(), 'normal_clusters':self.labels })
+        return [normal_result, micro_result, macro_result]
 
     def tick(self, data):
         self.metric_df = data.metric_df
@@ -298,16 +336,15 @@ class Clustering(StreamData):
         self.count = data.count 
         
         if(self.count < 2):
-            return
+            return {}
 
         if(self.count == 2):
             self.evostream()
-            return
         elif(self.count > 2):
             self.evostream_update()
             self.macro()
             self.micro()
-            return self.format()
+            return self._format()
 
     def evostream(self):
         self.time_series = self.metric_df.values
@@ -373,26 +410,16 @@ class Causal(StreamData):
         causality = Causality()
         causality.adaptive_progresive_var_fit(X, latency_limit_in_msec=100, point_choice_method="reverse")
         causality_from, causality_to = causality.check_causality('RbSec', signif=0.1)
-        ir_from, ir_to = causality.impulse_response('RbSec')
-        vd_from, vd_to = causality.variance_decomp('RbSec')
+        ir_from, ir_to = causality.impulse_response(self.metric)
+        vd_from, vd_to = causality.variance_decomp(self.metric)
 
-        from_result = pd.DataFrame({
-           'metrics': calc_metrics,
-           'causality': self.numpybool_to_bool(causality_from),
-           'IR_1': ir_from[:, 1],
-           'VD_1': vd_from[:, 1]
-        })
+        from_ = [(calc_metrics, self.numpybool_to_bool(causality_from), ir_from[:, 1].tolist(), vd_from[:, 1].tolist())]
+        to_ = [(calc_metrics, self.numpybool_to_bool(causality_to), ir_to[:, 1].tolist(), vd_to[:, 1].tolist())]
 
-        to_result = pd.DataFrame({
-            'metrics': calc_metrics,
-            'causality': self.numpybool_to_bool(causality_to),
-            'IR_1': ir_to[:, 1],
-            'VD_1': vd_to[:, 1]            
-        })
-
-        return {
-            'from': from_result.to_dict('records'),
-            'to': to_result.to_dict('records')
-        }
+        from_result = pd.DataFrame(data=from_, columns=['from_metrics','from_causality','from_IR_1', 'from_VD_1'])
+        to_result = pd.DataFrame(data=to_, columns=['to_metrics','to_causality','to_IR_1', 'to_VD_1'])
+    
+        print(from_result, to_result)
+        return [from_result, to_result]
 
 

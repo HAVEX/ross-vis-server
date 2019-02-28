@@ -52,7 +52,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             'clustering': 'evostream',
         }
         self.stream_count = 0
-        self.max_stream_count = 30
+        self.max_stream_count = 5
         self.stream_objs = {}
         WebSocketHandler.waiters.add(self)
 
@@ -60,43 +60,20 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         ret = {}      
         for idx, metric in enumerate(self.metric):
             if self.stream_count == 0: 
-                stream_data = StreamData(stream, self.granularity, metric, self.time_domain)
-                self.stream_objs[metric] = {
-                    'data': stream_data,
-                    'cpd': CPD(),
-                    'pca': PCA(),
-                    'causal': Causal(),
-                    'clustering': Clustering(),
-                }
+                self.stream_data = StreamData(stream, self.granularity, metric, self.time_domain)
+                self.stream_objs[metric] = self.stream_data
                 prop_data = {}
-            else: 
+            elif self.stream_count < 2: 
                 stream_obj = self.stream_objs[metric]
-                data = stream_obj['data']
-                cpd = stream_obj['cpd']
-                pca = stream_obj['pca']
-                clustering = stream_obj['clustering']
-                causal = stream_obj['causal']
-                prop_data = data.update(stream)
-               # print(prop_data)
-                cpd_result = cpd.tick(data, self.algo['cpd'])
-                pca_result = pca.tick(data, self.algo['pca'])
-                clustering_result = clustering.tick(data)
-                causality_result = causal.tick(data, self.algo['causality'])
-                print(cpd_result)
-                ret[metric] = {
-                    'ts': prop_data,
-                    'cpd' : cpd_result,
-                    'pca': pca_result,
-                    'clustering': clustering_result,
-                    'causality': causality_result,
-                }
-                schema = {k:type(v).__name__ for k,v in ret[metric].items()}
-                ret[metric]['schema'] = schema
-
+                self.stream_data = stream_obj.update(stream)
+                ret = self.stream_data.format()
+            else:
+                stream_obj = self.stream_objs[metric]
+                self.stream_data = stream_obj.update(stream)
+                ret = stream_obj.run_methods(self.stream_data, self.algo)
         return ret 
 
     def on_message(self, message, binary=False):
-        # print('message received %s' % message)
         req = json.loads(message)
 
         if('data' in req and req['data'] in ['PeData', 'KpData', 'LpData']):
@@ -133,10 +110,10 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 if self.stream_count < self.max_stream_count:
                     print("Stream :",self.stream_count)
                     stream = flatten(rd.fetch(sample))
+                    ret = self.process(stream)
                     schema = {k:type(v).__name__ for k,v in stream[0].items()}
                     msg = {
-                        'stream': stream,
-                        'results' : self.process(stream),
+                        'data': ret,
                         'schema': schema
                     }
                     #stream_data = StreamData(stream, self.granularity, self.time_domain)

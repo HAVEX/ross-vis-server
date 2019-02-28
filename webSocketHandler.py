@@ -57,7 +57,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         WebSocketHandler.waiters.add(self)
 
     def process(self, stream):  
-        ret = {}      
+        ret = {}                  
         for idx, metric in enumerate(self.metric):
             if self.stream_count == 0: 
                 self.stream_data = StreamData(stream, self.granularity, metric, self.time_domain)
@@ -66,11 +66,12 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             elif self.stream_count < 2: 
                 stream_obj = self.stream_objs[metric]
                 self.stream_data = stream_obj.update(stream)
-                ret = self.stream_data.format()
+                ret[metric] = self.stream_data.format()
             else:
+                print('Calculating results for {0}'.format(metric))
                 stream_obj = self.stream_objs[metric]
                 self.stream_data = stream_obj.update(stream)
-                ret = stream_obj.run_methods(self.stream_data, self.algo)
+                ret[metric] = stream_obj.run_methods(self.stream_data, self.algo)
         return ret 
 
     def on_message(self, message, binary=False):
@@ -82,7 +83,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if('method' in req and req['method'] in ['stream', 'get']):
             self.method = req['method']
         
-        if('granularity' in req and req['granularity'] in ['Peid', 'KpGid', 'Lpid']):
+        if('granularity' in req and req['granularity'] in ['Peid', 'KpGid', 'Lpid', 'Kpid']):
             self.granularity = req['granularity']
 
         if('timeDomain' in req and req['timeDomain'] in ['LastGvt', 'VirtualTime', 'RealTs']):
@@ -110,18 +111,21 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 if self.stream_count < self.max_stream_count:
                     print("Stream :",self.stream_count)
                     stream = flatten(rd.fetch(sample))
-                    result = self.process(stream)
-                    if(bool(result) == False):
-                        msg = {
-                            'data': {},
-                        }
-                    else:
-                        ret_df = result[0]
-                        schema = result[1]
-                        msg = {
-                            'data': ret_df,
-                            'schema': schema
-                        }
+                    res = self.process(stream)
+                    msg = {}
+                    if self.stream_count > 2:
+                        print(res.keys())
+                        for idx, metric in enumerate(self.metric):
+                            r = res.get(metric)
+                            ret_df = r[0]
+                            result = r[1]
+                            schema = r[2]
+                            msg[metric] = {
+                                'data': ret_df,
+                                'result': result,
+                                'schema': schema
+                            }
+                        print(msg) 
                     #stream_data = StreamData(stream, self.granularity, self.time_domain)
                     #func = partial(process, stream_data, self.data_count, self.algo, self.time_domain, self.granularity, stream)
                     #msg = pool.map(func, self.metric)

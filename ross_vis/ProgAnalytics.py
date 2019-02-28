@@ -67,6 +67,7 @@ class StreamData:
         self.pca = PCA()
         self.causal = Causal()
         self.clustering = Clustering()
+        self.results = pd.DataFrame(data=self.df[granularity].astype(np.float64).tolist(), columns=[granularity])
 
     def _format(self):
         # Convert metric_df to ts : { id1: [timeSeries], id2: [timeSeries] }    
@@ -84,11 +85,7 @@ class StreamData:
 
     def format(self):
         schema = {k:type(v).__name__ for k,v in self.df.items()}
-        return (self.df.to_dict('records'), schema)
-        return({
-            'data': self.df.to_dict('records'),
-            'schema': schema
-        })
+        return (self.df.to_dict('records'), self.results.to_dict('records'), schema)
 
     def groupby(self, df, keys, metric = 'mean'):
         # Groups data by the keys provided
@@ -114,7 +111,7 @@ class StreamData:
         return table
 
     def drop_prev_results(self, attrs): 
-        self.df.drop(attrs, axis=1, inplace =True)
+        self.results.drop(attrs, axis=1, inplace=True)
 
     def update(self, new_data):
         new_data_df = pd.DataFrame(new_data)
@@ -135,7 +132,7 @@ class StreamData:
             ])
             self.drop_prev_results(['cpd'])
         if(self.count > 3):
-            self.drop_prev_results(['normal', 'normal_clusters'])
+            self.drop_prev_results(['normal', 'normal_clusters','micro', 'micro_clusters', 'macro', 'macro_clusters'])
 
     def run_methods(self, data, algo):
         self.clean_up()
@@ -143,14 +140,13 @@ class StreamData:
         pca_result = self.pca.tick(data, algo['pca'])
         causal_result = self.causal.tick(data, algo['causality'])
         clustering_result = self.clustering.tick(data)
-        print(cpd_result)
         
-        self.df = self.df.join(pca_result)
-        self.df = self.df.join(causal_result)
-        self.df = self.df.join(cpd_result)
+        self.results = self.results.join(cpd_result)
+        self.results = self.results.join(pca_result)
         if(self.count > 2):
-            self.df = self.df.join(clustering_result)
-        self.df = self.df.fillna(0)
+            self.results = self.results.join(clustering_result)
+        self.results = self.results.join(causal_result)
+        self.results = self.results.fillna(0)   
         return self.format()
 
     def to_csv(self):
@@ -200,7 +196,7 @@ class CPD(StreamData):
         change = self.stream.feed_predict(new_time_point)
         if change:
             self.cps.append(0)
-            print('change', 0)
+            print('Change', 0)
             return 1
         else:
             return 0
@@ -224,7 +220,7 @@ class CPD(StreamData):
         change = self.aff_obj.feed_predict(Xt[0, :])
         if change:
             self.cps.append(0)
-            print('change', 0)
+            print('Change', 0)
             return 1
         else:
             return 0

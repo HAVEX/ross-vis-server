@@ -111,16 +111,11 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     print("Stream :",self.stream_count)
                     stream = flatten(rd.fetch(sample))
                     result = self.process(stream)
-                    print(type(result), result)
-                    
-                    print(bool(result))
                     if(bool(result) == False):
-                        print('a')
                         msg = {
                             'data': {},
                         }
                     else:
-                        print('b')
                         ret_df = result[0]
                         schema = result[1]
                         msg = {

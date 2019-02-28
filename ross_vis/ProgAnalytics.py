@@ -130,21 +130,24 @@ class StreamData:
     def clean_up(self):
         if(self.count > 2):
             self.drop_prev_results(['PC0','PC1'])
-        if(self.count > 3):
-            self.drop_prev_results(['normal', 'normal_clusters'])
-        if(self.count > 2):
             self.drop_prev_results(['from_metrics','from_causality','from_IR_1', 'from_VD_1',
                                     'to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'
             ])
+            self.drop_prev_results(['cpd'])
+        if(self.count > 3):
+            self.drop_prev_results(['normal', 'normal_clusters'])
 
     def run_methods(self, data, algo):
         self.clean_up()
-        #self.df['cpd'] = self.cpd.tick(data, algo['cpd'])
+        cpd_result = self.cpd.tick(data, algo['cpd'])
         pca_result = self.pca.tick(data, algo['pca'])
-        self.df = self.df.join(pca_result)
         causal_result = self.causal.tick(data, algo['causality'])
-        self.df = self.df.join(causal_result)
         clustering_result = self.clustering.tick(data)
+        print(cpd_result)
+        
+        self.df = self.df.join(pca_result)
+        self.df = self.df.join(causal_result)
+        self.df = self.df.join(cpd_result)
         if(self.count > 2):
             self.df = self.df.join(clustering_result)
         self.df = self.df.fillna(0)
@@ -160,6 +163,13 @@ class CPD(StreamData):
     def __init__(self):
         # Stores the change points recorded.
         self.cps = []
+        self.alpha = 0.2
+        self.aff_obj = PCAAFFCPD(alpha=self.alpha)
+
+    def format(self, result):
+        cpd = [(result)]
+        cpd_result = pd.DataFrame(data=cpd, columns=['cpd'],)
+        return [cpd_result]
 
     def tick(self, data, method):
         ret = False
@@ -178,7 +188,7 @@ class CPD(StreamData):
                 result = self.aff_update()
             elif(self.method == 'stream'):
                 result = self.stream_update()
-        return result
+        return self.format(result)
 
     def get_change_points(self):
         # Getter to return the change points.
@@ -191,9 +201,9 @@ class CPD(StreamData):
         if change:
             self.cps.append(0)
             print('change', 0)
-            return True
+            return 1
         else:
-            return False
+            return 0
 
     def stream_update(self):
         X = np.array(self.new_data_df)
@@ -202,36 +212,33 @@ class CPD(StreamData):
         if(change):
             self.cps.append(self.count)
             print('Change', self.count)
-            return True
+            return 1
         else:
-            return False
+            return 0
 
     def aff(self):
-        alpha = 0.2
         X = np.array(self.new_data_df)
         Xt = X.transpose()
         
         # perform adaptive forgetting factor CPD
-        self.aff = PCAAFFCPD(alpha=alpha)
-        change = self.aff.feed_predict(Xt[0, :])
+        change = self.aff_obj.feed_predict(Xt[0, :])
         if change:
             self.cps.append(0)
             print('change', 0)
-            return True
+            return 1
         else:
-            return False
+            return 0
             
     def aff_update(self):
-        print(self.aff)
         X = np.array(self.new_data_df[self.current_time])
-        Xt = X.transpose() 
-        change = self.aff.feed_predict(Xt)
+        Xt = X.transpose()
+        change = self.aff_obj.feed_predict(Xt[0, :])
         if(change):
             self.cps.append(self.count)
             print('Change', self.count)
-            return True
+            return 1
         else:
-            return False
+            return 0
 
 class PCA(StreamData):
     def __init__(self):
@@ -300,7 +307,6 @@ class PCA(StreamData):
     def inc_update(self):
         pass
 
-
 class Clustering(StreamData):
     def __init__(self):
         self.n_clusters = 3
@@ -321,12 +327,11 @@ class Clustering(StreamData):
             'normal': normal_result,
             'micro': micro_result,
         })
-        print(normal_result.shape, micro_result.shape, macro_result.shape)
 
     def _format(self):
         micro = [(self.time_series_micro.tolist(), self.labels_micro)]
         macro = [(self.time_series_macro.tolist(), self.labels_macro)]
-        micro_result = pd.DataFrame(data=micro, columns=['micro','micro_clusters'],)
+        micro_result = pd.DataFrame(data=micro, columns=['micro', 'micro_clusters'])
         macro_result = pd.DataFrame(data=macro, columns=['macro', 'macro_clusters'])
         normal_result = pd.DataFrame.from_dict({'normal': np.asmatrix(self.time_series).tolist(), 'normal_clusters':self.labels })
         return [normal_result, micro_result, macro_result]
@@ -420,7 +425,6 @@ class Causal(StreamData):
         from_result = pd.DataFrame(data=from_, columns=['from_metrics','from_causality','from_IR_1', 'from_VD_1'])
         to_result = pd.DataFrame(data=to_, columns=['to_metrics','to_causality','to_IR_1', 'to_VD_1'])
     
-        print(from_result, to_result)
         return [from_result, to_result]
 
 

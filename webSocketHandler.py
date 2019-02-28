@@ -110,12 +110,23 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 if self.stream_count < self.max_stream_count:
                     print("Stream :",self.stream_count)
                     stream = flatten(rd.fetch(sample))
-                    ret = self.process(stream)
-                    schema = {k:type(v).__name__ for k,v in stream[0].items()}
-                    msg = {
-                        'data': ret,
-                        'schema': schema
-                    }
+                    result = self.process(stream)
+                    print(type(result), result)
+                    
+                    print(bool(result))
+                    if(bool(result) == False):
+                        print('a')
+                        msg = {
+                            'data': {},
+                        }
+                    else:
+                        print('b')
+                        ret_df = result[0]
+                        schema = result[1]
+                        msg = {
+                            'data': ret_df,
+                            'schema': schema
+                        }
                     #stream_data = StreamData(stream, self.granularity, self.time_domain)
                     #func = partial(process, stream_data, self.data_count, self.algo, self.time_domain, self.granularity, stream)
                     #msg = pool.map(func, self.metric)

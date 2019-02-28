@@ -84,6 +84,7 @@ class StreamData:
 
     def format(self):
         schema = {k:type(v).__name__ for k,v in self.df.items()}
+        return (self.df.to_dict('records'), schema)
         return({
             'data': self.df.to_dict('records'),
             'schema': schema

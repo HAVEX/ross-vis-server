@@ -83,8 +83,17 @@ class StreamData:
             'schema': schema
         })
 
+    def process_type(self, type):
+        if(type == 'int64'):
+            return 'int'
+        if(type == 'float64'):
+            return 'float'
+        if(type == 'list'):
+            return 'int'
+
     def format(self):
-        schema = {k:type(v).__name__ for k,v in self.df.items()}
+        schema = {k:self.process_type(type(v).__name__) for k,v in self.df.iloc[0].items()}
+        print(schema)
         return (self.df.to_dict('records'), self.results.to_dict('records'), schema)
 
     def groupby(self, df, keys, metric = 'mean'):

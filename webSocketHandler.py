@@ -114,7 +114,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     res = self.process(stream)
                     msg = {}
                     if self.stream_count > 2:
-                        print(res.keys())
                         for idx, metric in enumerate(self.metric):
                             r = res.get(metric)
                             ret_df = r[0]
@@ -125,7 +124,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                                 'result': result,
                                 'schema': schema
                             }
-                        print(msg) 
                     #stream_data = StreamData(stream, self.granularity, self.time_domain)
                     #func = partial(process, stream_data, self.data_count, self.algo, self.time_domain, self.granularity, stream)
                     #msg = pool.map(func, self.metric)

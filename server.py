@@ -98,6 +98,7 @@ class AjaxGetPCA(tornado.web.RequestHandler):
         analysis = Analytics(data, index=['Peid', 'Kpid', 'RealTs', 'LastGvt', 'VirtualTs', 'KpGid', 'EventId'])
         analysis.groupby(['Peid', 'Kpid'])
         result = analysis.pca(2)
+        print(type(data))
         schema = {k:type(v).__name__ for k,v in data[0].items()}
         self.write({
             'data': result.to_dict('records'),

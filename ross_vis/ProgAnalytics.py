@@ -93,7 +93,6 @@ class StreamData:
 
     def format(self):
         schema = {k:self.process_type(type(v).__name__) for k,v in self.df.iloc[0].items()}
-        print(schema)
         return (self.df.to_dict('records'), self.results.to_dict('records'), schema)
 
     def groupby(self, df, keys, metric = 'mean'):

@@ -52,7 +52,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             'clustering': 'evostream',
         }
         self.stream_count = 0
-        self.max_stream_count = 5
+        self.max_stream_count = 100
         self.stream_objs = {}
         WebSocketHandler.waiters.add(self)
 
@@ -127,7 +127,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     #stream_data = StreamData(stream, self.granularity, self.time_domain)
                     #func = partial(process, stream_data, self.data_count, self.algo, self.time_domain, self.granularity, stream)
                     #msg = pool.map(func, self.metric)
-                    time.sleep(0.5)
                     self.stream_count = self.stream_count + 1
                     self.write_message(msg)
                 else:

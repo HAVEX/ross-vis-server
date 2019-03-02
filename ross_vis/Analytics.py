@@ -22,9 +22,6 @@ class Analytics:
         if index is not None:
             self.data.set_index(index)
 
-    def get(self, attr):
-        self.data = self.data[attr]
-
     def groupby(self, keys, metric = 'mean'):
         self.groups = self.data.groupby(keys)
         measure = getattr(self.groups, metric)
@@ -42,107 +39,6 @@ class Analytics:
         pcs = pca.fit_transform(std_data)
         pca_result = pd.DataFrame(data = pcs, columns = ['PC%d'%x for x in range(0, n_components) ])
 
-        #for pc in pca_result.columns.values:
-            #@self.data[pc] = pca_result[pc].values
-            # self.data = pd.concat([self.data, pca_result], axis=1, sort=False)
-        return pca_result
-
-    def prog_inc_pca(self, n_components = 2, forgetting_factor = 1.0, attr='RbSec'):
-        pca = prog_inc_pca_cpp.ProgIncPCA(2, 1.0)
-        print(self.data, self.data.values)
-        table = pd.pivot_table(self.data, values=['RbSec'], index=['KpGid'], columns=['LastGvt'])
-        print(table, table.values)
-        pca.progressive_fit(table.values, 10, "random")
-        pcs = pca.transform(table.values)
-        print(pcs)
-        pca.get_loadings()
-        pca_result = pd.DataFrame(data = pcs, columns = ['PC%d' %x for x in range(0, n_components) ])
-
-        #for pc in pca_result.columns.values:
-            #self.data[pc] = pca_result[pc].values
-        return pca_result
-  
-    def inc_pca(self, n_components = 2):
-        pca = inc_pca_cpp.IncPCA(2, 1.0)
-        pca.partial_fit(self.data)
-        pcs = pca.transform(self.data.values)
-        pca_result =  pd.DataFrame(data = pcs, columns = ['PC%d'%x for x in range(0, n_components) ])
-
         for pc in pca_result.columns.values:
             self.data[pc] = pca_result[pc].values
-            # self.data = pd.concat([self.data, pca_result], axis=1, sort=False)
-            return pca_result
-    
-    def a_tsne(self):
-        return tsne_result
-    
-    def aff_cpd(self):      
-        return aff_result
-
-    def causality(self):
-        metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
-           'RbSec', 'RbTotal', 'VirtualTimeDiff']
-        data = self.data
-        casuality = Causality()
-        casuality.adaptive_progresive_var_fit(data, latency_limit_in_msec=100)
-        casuality_from, casuality_to = casuality.check_causality('RbSec', signif=0.1)
-        ir_from, ir_to = casuality.impulse_response('RbSec')
-        vd_from, vd_to = casuality.variance_decomp('RbSec')
-
-        print(id_from, vd_from)
-
-        print(pd.DataFrame({
-           'Metrics': metrics,
-           'Causality': causality_from,
-           'IR 1 step later': ir_from[:, 1],
-           'VD 1 step later': vd_from[:, 1]
-        }))  
-
-
-    def pca_stream_cpd_process(self, y_domain):
-        '''
-            Convert the grouped Dataframe into np.array([p1, p2, p3....],
-                                                        [p1, p2, p3....]
-                                                        ,...,...,...,...)
-        '''
-        ret = np.zeros([1000,8], dtype=int)
-        temp_key = None
-        idx = 0
-        keys = {}
-        for key, item in self.groups:
-            if temp_key == None:
-                temp_key = key[0]
-            if key[0] != temp_key:
-                temp_key = key[0]
-                idx = idx + 1
-                keys[idx] = temp_key
-                ret[idx][int(key[1])] = self.groups.get_group(key)[y_domain]
-            else:
-                ret[idx][int(key[1])] = self.groups.get_group(key)[y_domain]
-        return ret, keys
-
-    def pca_stream_cpd(self, y_domain):    
-        time_series, groups = self.pca_stream_cpd_process(y_domain)  
-        print(time_series)  
-        cpd = PCAStreamCPD(win_size=5)
-        pca_cpd_result = []
-        for i, new_time_point in enumerate(time_series):
-            change = cpd.feed_predict(new_time_point)
-            if change:
-                pca_cpd_result.append(i)
-                print('Change point at {0}'.format(groups[i]))
-        return pca_cpd_result
-
-class PCAStreamCPD(pca_stream_cpd_cpp.PCAStreamCPD):
-    def __init__(self,
-                 win_size,
-                 theta_factor=0.0,
-                 divergence_metric="area",
-                 thres_total_ex_var_ratio=0.99,
-                 delta=0.005,
-                 bin_width_factor=2.0):
-        super().__init__(win_size, theta_factor, divergence_metric,
-                         thres_total_ex_var_ratio, delta, bin_width_factor)
-
-    def feed_predict(self, new_time_point):
-        return super().feed_predict(new_time_point)
+            self.data = pd.concat([self.data, pca_result], axis=1, sort=False)

@@ -19,9 +19,7 @@ from ross_vis.DataCache import RossDataCache
 from ross_vis.Transform import flatten, flatten_list
 from ross_vis.Analytics import Analytics
 
-from cpdHandler import CPDHandler
-from webSocketHandler import WebSocketHandler
-from pcaHandler import PCAHandler
+from WebSocketServer import WebSocketHandler
 
 define("http", default=8888, help="run on the given port", type=int)
 define("stream", default=8000, help="streaming on the given port", type=int)
@@ -34,10 +32,8 @@ class Application(tornado.web.Application):
             (r"/", MainHandler),
             (r'/app/(.*)', tornado.web.StaticFileHandler, {'path': appdir}),
             (r"/data", AjaxGetJsonData),
-            # (r"/pca", AjaxGetPCA),
-            (r"/websocket", WebSocketHandler),
-            (r"/cpd", CPDHandler),
-            (r"/pca", PCAHandler)
+            (r"/pca", AjaxGetPCA),
+            (r"/websocket", WebSocketHandler)
         ]
         settings = dict(
             cookie_secret="'a6u^=-sr5ph027bg576b3rl@#^ho5p1ilm!q50h0syyiw#zjxwxy0&gq2j*(ofew0zg03c3cyfvo'",
@@ -45,7 +41,6 @@ class Application(tornado.web.Application):
             static_path=os.path.join(os.path.dirname(__file__), appdir+'/static'),
             xsrf_cookies=True,
         )
-        
         super(Application, self).__init__(handlers, **settings)
 
 class StreamServer(TCPServer):
@@ -82,10 +77,9 @@ class MainHandler(tornado.web.RequestHandler):
         
 class AjaxGetJsonData(tornado.web.RequestHandler):
     def get(self):
-        data = WebSocketHandler.cache.export_dict('KpData')
         schema = {k:type(v).__name__ for k,v in data[0].items()}
         self.write({
-            'data': WebSocketHandler.cache.export_dict('KpData'),
+            'data': WebSocketHandler.KpData,
             'schema': schema
         })
 
@@ -111,6 +105,7 @@ def main():
 
     if (os.path.isfile(options.datafile)):
         WebSocketHandler.cache.loadfile(options.datafile)
+        WebSocketHandler.KpData = WebSocketHandler.cache.export_dict('KpData')
         print('Test mode: loaded %d samples' % WebSocketHandler.cache.size())
 
     app = Application(options.appdir)

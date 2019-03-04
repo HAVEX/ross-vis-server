@@ -11,12 +11,14 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
     waiters = set()
     cache = RossDataCache()
     cache_size = 100
+    KpData = []
+    params = None
 
     def open(self):
         print('new connection')
         self.data_attribute = 'PeData'
         self.method = 'get' 
-        self.params = None
+
         WebSocketHandler.waiters.add(self)
 
     def on_message(self, message, binary=False):
@@ -36,7 +38,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 msg = {'data': flatten(rd.fetch(sample))}
                 self.write_message(msg)
 
-        if(self.method == 'stream-test'):
+        if(self.method == 'stream-next'):
             rd = RossData([self.data_attribute])
             sample = WebSocketHandler.cache.data.pop(0)
             msg = {'data': flatten(rd.fetch(sample))}
@@ -47,13 +49,14 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             schema = {k:type(v).__name__ for k,v in data[0].items()}
 
             msg = {'data': data, 'schema': schema}
-            if(self.params != None):
+            if(WebSocketHandler.params != None):
                 msg['params'] = self.params
             self.write_message(msg)
 
         if(self.method == 'set'):
-            self.params = req['params']
-            print(self.params)
+            WebSocketHandler.params = req['params']
+            self.write_message({'status': 'ok'})
+            print(WebSocketHandler.params)
 
     def on_close(self):
         print('connection closed')

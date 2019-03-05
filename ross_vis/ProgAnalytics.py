@@ -68,6 +68,8 @@ class StreamData:
         self.causal = Causal()
         self.clustering = Clustering()
         self.results = pd.DataFrame(data=self.df[granularity].astype(np.float64).tolist(), columns=[granularity])
+        self._time = self.metric_df.columns.get_level_values(1).tolist()
+        
 
     def _format(self):
         # Convert metric_df to ts : { id1: [timeSeries], id2: [timeSeries] }    
@@ -130,22 +132,24 @@ class StreamData:
         self.new_data_df.reset_index(drop=True, inplace=True)
         self.metric_df = pd.concat([self.metric_df, self.new_data_df], axis=1).T.drop_duplicates().T
         self.count = self.count + 1
+        self._time = self.metric_df.columns.get_level_values(1).tolist()
+
         return self     
 
     def clean_up(self):
         if(self.count > 2):
             self.drop_prev_results(['PC0','PC1'])
+            self.drop_prev_results(['cpd'])
             self.drop_prev_results(['from_metrics','from_causality','from_IR_1', 'from_VD_1',
                                     'to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'
             ])
-            self.drop_prev_results(['cpd'])
         if(self.count > 3):
-            self.drop_prev_results(['normal', 'normal_clusters','micro', 'micro_clusters', 'macro', 'macro_clusters'])
+            self.drop_prev_results(['normal', 'normal_clusters','micro', 'micro_clusters', 'macro', 'macro_clusters', 'macro_times', 'micro_times'])
 
     def run_methods(self, data, algo):
         self.clean_up()
-        cpd_result = self.cpd.tick(data, algo['cpd'])
         pca_result = self.pca.tick(data, algo['pca'])
+        cpd_result = self.cpd.tick(data, algo['cpd'])
         causal_result = self.causal.tick(data, algo['causality'])
         clustering_result = self.clustering.tick(data)
         
@@ -320,6 +324,8 @@ class Clustering(StreamData):
         self.labels = np.array([])
         self.labels_macro = np.array([])
         self.labels_micro = np.array([])
+        self.times_macro = np.array([])
+        self.times_micro = np.array([])
 
 
     def format(self):
@@ -333,16 +339,17 @@ class Clustering(StreamData):
         })
 
     def _format(self):
-        micro = [(self.time_series_micro.tolist(), self.labels_micro)]
-        macro = [(self.time_series_macro.tolist(), self.labels_macro)]
-        micro_result = pd.DataFrame(data=micro, columns=['micro', 'micro_clusters'])
-        macro_result = pd.DataFrame(data=macro, columns=['macro', 'macro_clusters'])
+        micro = [(self.time_series_micro.tolist(), self.labels_micro, self._time)]
+        macro = [(self.time_series_macro.tolist(), self.labels_macro, self._time)]
+        micro_result = pd.DataFrame(data=micro, columns=['micro', 'micro_clusters', 'micro_times'])
+        macro_result = pd.DataFrame(data=macro, columns=['macro', 'macro_clusters', 'macro_times'])
         normal_result = pd.DataFrame.from_dict({'normal': np.asmatrix(self.time_series).tolist(), 'normal_clusters':self.labels })
         return [normal_result, micro_result, macro_result]
 
     def tick(self, data):
         self.metric_df = data.metric_df
         self.new_data_df = data.new_data_df
+        self._time = data._time
         self.count = data.count 
         
         if(self.count < 2):
@@ -374,11 +381,14 @@ class Clustering(StreamData):
     def macro(self):
         self.time_series_macro = np.array(self.evo.get_macro_clusters())
         self.labels_macro = [self.current_to_prev[i] for i in range(self.time_series_macro.shape[0])]
+        self.times_macro = np.array(self._time)
 
     def micro(self):
         self.time_series_micro = np.array(self.evo.get_micro_clusters())
         self.lables_micro = self.evo.predict(self.time_series_micro)
         self.labels_micro = [self.current_to_prev[i] for i in self.labels_micro]
+        print(self.labels_micro)
+        self.times_micro = np.array(self._time)
 
 class Causal(StreamData):
     def __init__(self):

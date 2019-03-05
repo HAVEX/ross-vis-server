@@ -140,9 +140,9 @@ class StreamData:
         if(self.count > 2):
             self.drop_prev_results(['PC0','PC1'])
             self.drop_prev_results(['cpd'])
-            self.drop_prev_results(['from_metrics','from_causality','from_IR_1', 'from_VD_1',
-                                    'to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'
-            ])
+            #self.drop_prev_results(['from_metrics','from_causality','from_IR_1', 'from_VD_1',
+            #                        'to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'
+            #])
         if(self.count > 3):
             self.drop_prev_results(['normal', 'normal_clusters','micro', 'micro_clusters', 'macro', 'macro_clusters', 'macro_times', 'micro_times'])
 
@@ -150,14 +150,14 @@ class StreamData:
         self.clean_up()
         pca_result = self.pca.tick(data, algo['pca'])
         cpd_result = self.cpd.tick(data, algo['cpd'])
-        causal_result = self.causal.tick(data, algo['causality'])
+        #causal_result = self.causal.tick(data, algo['causality'])
         clustering_result = self.clustering.tick(data)
         
         self.results = self.results.join(cpd_result)
         self.results = self.results.join(pca_result)
         if(self.count > 2):
             self.results = self.results.join(clustering_result)
-        self.results = self.results.join(causal_result)
+        #self.results = self.results.join(causal_result)
         self.results = self.results.fillna(0)   
         return self.format()
 
@@ -370,16 +370,32 @@ class Clustering(StreamData):
         self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
         self.labels = self.evo.predict(self.time_series)
         
+    def check_consistent_labels(self, current_to_prev):
+        ret = {}
+        mapper = {}
+        for i in range(self.n_clusters):
+            if i in current_to_prev:
+                ret[i] = current_to_prev[i]
+                mapper[i] = True
+            else:
+                for idx, val in enumerate(mapper):
+                    if val == False:
+                        ret[i] = val
+            print('aa')
+        print(ret)
+        return ret
+
     def evostream_update(self):
         new_time_series = self.new_data_df.values
         self.time_series = np.append(self.time_series, new_time_series, 1)
         self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec, point_choice_method="random", verbose=True)
         self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
-        #self.labels, self.current_to_prev = ProgEvoStream.consistent_labels(self.labels, self.evo.predict(self.time_series))
-        self.labels, self.current_to_prev = self.labels, self.evo.predict(self.time_series)
+        self.labels, self.current_to_prev = ProgEvoStream.consistent_labels(self.labels, self.evo.predict(self.time_series))
+        #self.labels = self.evo.predict(self.time_series)
 
     def macro(self):
         self.time_series_macro = np.array(self.evo.get_macro_clusters())
+       # self.current_to_prev = self.check_consistent_labels(self.current_to_prev)
         self.labels_macro = [self.current_to_prev[i] for i in range(self.time_series_macro.shape[0])]
         self.times_macro = np.array(self._time)
 
@@ -387,7 +403,6 @@ class Clustering(StreamData):
         self.time_series_micro = np.array(self.evo.get_micro_clusters())
         self.lables_micro = self.evo.predict(self.time_series_micro)
         self.labels_micro = [self.current_to_prev[i] for i in self.labels_micro]
-        print(self.labels_micro)
         self.times_micro = np.array(self._time)
 
 class Causal(StreamData):

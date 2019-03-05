@@ -107,6 +107,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if(self.method == 'stream'):
             rd = RossData([self.data_attribute])
             #pool = multiprocessing.Pool()            
+            print("Grnaularity", self.granularity)
             for sample in WebSocketHandler.cache.data:
                 if self.stream_count < self.max_stream_count:
                     print("Stream :",self.stream_count)

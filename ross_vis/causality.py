@@ -1,7 +1,8 @@
-import time
 import math
-import numpy as np
+import time
 from random import shuffle
+
+import numpy as np
 from statsmodels.tsa.vector_ar.var_model import VAR
 
 
@@ -261,13 +262,23 @@ class Causality():
                     maxlags=maxlags,
                     ic=ic)
             except:
-                print("order selection doesn't work well")
-                self.var_fit(
-                    endog.iloc[order[:self.n_processed_in_prev_var_fit]],
-                    maxlags=maxlags,
-                    ic=None,
-                    verbose=verbose,
-                    trend=trend)
+                print(
+                    "var_fit's order selection doesn't work well. var_fit will",
+                    "use input variable order instead of an optimal order.")
+                try:
+                    self.var_fit(
+                        endog.iloc[order[:self.n_processed_in_prev_var_fit]],
+                        maxlags=maxlags,
+                        ic=None,
+                        verbose=verbose,
+                        trend=trend)
+                except:
+                    self.var_fit(
+                        endog.iloc[order[:self.n_processed_in_prev_var_fit]],
+                        maxlags=maxlags,
+                        ic=None,
+                        verbose=verbose,
+                        trend='nc')
 
             self.duration_in_prev_var_fit = time.time() - loop_start_time
 
@@ -327,7 +338,7 @@ class Causality():
             causing_to = [
                 self.var_result.test_causality(
                     caused=i, causing=target, kind=kind).pvalue < signif
-                for i in range(0, 7)
+                for i in range(0, d)  ###############
             ]
             # replace target->target results as None
             target_idx = target

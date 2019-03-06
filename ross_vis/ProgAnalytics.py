@@ -71,8 +71,6 @@ class StreamData:
         self._time = self.metric_df.columns.get_level_values(1).tolist()
         self.granIDs = self.df[self.granularity]
 
-        
-
     def _format(self):
         # Convert metric_df to ts : { id1: [timeSeries], id2: [timeSeries] }    
         ret = {}
@@ -294,6 +292,7 @@ class PCA(StreamData):
     def prog_inc(self):
         pca = ProgIncPCA(2, 1.0)
         self.time_series = self.metric_df.values
+        print(self.time_series.shape)
         pca.progressive_fit(self.time_series, 10, "random")
         self.pcs_curr = pca.transform(self.time_series) 
         pca.get_loadings()
@@ -301,6 +300,7 @@ class PCA(StreamData):
     def prog_inc_update(self):
         new_time_series = self.new_data_df.values
         self.time_series = np.append(self.time_series, new_time_series, 1)
+        print(self.time_series.shape)
         pca = ProgIncPCA(2, 1.0)
         pca.progressive_fit(self.time_series, latency_limit_in_msec = 10)
         self.pcs_new = pca.transform(self.time_series)
@@ -412,39 +412,91 @@ class Causal(StreamData):
     def tick(self, data, method):
         self.df = data.df
         self.metric = data.metric
+        # metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
+        # 'RbSec', 'RbTotal', 'VirtualTimeDiff', 'LastGvt', 'Peid', 'KpGid']
         metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
-           'RbSec', 'RbTotal', 'VirtualTimeDiff', 'KpGid', 'LastGvt', 'Peid', 'RealTs', 'VirtualTs']
+              'RbSec', 'RbTotal', 'VirtualTimeDiff', 'LastGvt', 'Peid']
 
         calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventRb', 'NeventProcessed', \
            'RbSec', 'RbTotal', 'VirtualTimeDiff']
 
         pca = ProgIncPCA(1)
         total_latency_for_pca = 100
-        latency_for_each = int(total_latency_for_pca/len(metrics))
+        latency_for_each = int(total_latency_for_pca / len(metrics))
         X_dict = {}
         self.df = self.df[metrics]
 
         for metric in calc_metrics:
             metric_nd = data.processByMetric(self.df, metric).values
-            pca.progressive_fit(metric_nd, latency_limit_in_msec=latency_for_each, point_choice_method='random', verbose=True)
+            pca.progressive_fit(
+                metric_nd,
+                latency_limit_in_msec=latency_for_each,
+                point_choice_method='random',
+                verbose=True)
             metric_ld = pca.transform(metric_nd)
             X_dict[metric] = metric_ld.flatten().tolist()
-        X = pd.DataFrame(X_dict)
-        X = X.loc[:, (X != X.iloc[0]).any()]
 
+        X = pd.DataFrame(X_dict)
+        is_non_const_col = (X != X.iloc[0]).any()
+        X = X.loc[:, is_non_const_col]
 
         causality = Causality()
-        causality.adaptive_progresive_var_fit(X, latency_limit_in_msec=100, point_choice_method="reverse")
-        causality_from, causality_to = causality.check_causality(data.metric, signif=0.1)
-        ir_from, ir_to = causality.impulse_response(self.metric)
-        vd_from, vd_to = causality.variance_decomp(self.metric)
+        causality.adaptive_progresive_var_fit(
+            X, latency_limit_in_msec=100, point_choice_method="reverse")
 
-        from_ = [(calc_metrics, self.numpybool_to_bool(causality_from), ir_from[:, 1].tolist(), vd_from[:, 1].tolist())]
-        to_ = [(calc_metrics, self.numpybool_to_bool(causality_to), ir_to[:, 1].tolist(), vd_to[:, 1].tolist())]
+        causality_from = pd.DataFrame(
+            index=[0], columns=calc_metrics).fillna(False)
+        causality_to = pd.DataFrame(
+            index=[0], columns=calc_metrics).fillna(False)
 
-        from_result = pd.DataFrame(data=from_, columns=['from_metrics','from_causality','from_IR_1', 'from_VD_1'])
-        to_result = pd.DataFrame(data=to_, columns=['to_metrics','to_causality','to_IR_1', 'to_VD_1'])
-    
+        causality_from.loc[0, is_non_const_col], causality_to.loc[
+            0, is_non_const_col] = causality.check_causality(
+                data.metric, signif=0.1)
+
+        ir_from = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
+        ir_to = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
+
+        vd_from = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
+        vd_to = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
+
+        try:
+            tmp_ir_from, tmp_ir_to = causality.impulse_response(self.metric)
+            ir_from.loc[0, is_non_const_col] = tmp_ir_from[:, 1]
+            ir_to.loc[0, is_non_const_col] = tmp_ir_to[:, 1]
+        except:
+            print("impulse reseponse was not excuted. probably matrix is not",
+                  "positive definite")
+
+        try:
+            tmp_vd_from, tmp_vd_to = causality.variance_decomp(self.metric)
+            vd_from.loc[0, is_non_const_col] = tmp_vd_from[:, 1]
+            vd_to.loc[0, is_non_const_col] = tmp_vd_to[:, 1]
+        except:
+            print("impulse reseponse was not excuted. probably matrix is not",
+                  "positive definite")
+
+        causality_from = causality_from.loc[0, :].tolist()
+        causality_to = causality_to.loc[0, :].tolist()
+        ir_from = ir_from.loc[0, :].tolist()
+        ir_to = ir_to.loc[0, :].tolist()
+        vd_from = vd_from.loc[0, :].tolist()
+        vd_to = vd_to.loc[0, :].tolist()
+
+        from_ = [(calc_metrics, self.numpybool_to_bool(causality_from),
+                  ir_from, vd_from)]
+        to_ = [(calc_metrics, self.numpybool_to_bool(causality_to), ir_to,
+                vd_to)]
+
+        from_result = pd.DataFrame(
+            data=from_,
+            columns=[
+                'from_metrics', 'from_causality', 'from_IR_1', 'from_VD_1'
+            ])
+        to_result = pd.DataFrame(
+            data=to_,
+            columns=['to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'])
+
         return [from_result, to_result]
+
 
 

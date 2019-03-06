@@ -76,6 +76,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
     def on_message(self, message, binary=False):
         req = json.loads(message)
+        print(message)
 
         if('data' in req and req['data'] in ['PeData', 'KpData', 'LpData']):
             self.data_attribute = req['data']
@@ -106,8 +107,9 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         
         if(self.method == 'stream'):
             rd = RossData([self.data_attribute])
-            #pool = multiprocessing.Pool()            
-            print("Grnaularity", self.granularity)
+            #pool = multiprocessing.Pool()   
+            print("Data Attribute", self.data_attribute)         
+            print("Granularity", self.granularity)
             for sample in WebSocketHandler.cache.data:
                 if self.stream_count < self.max_stream_count:
                     print("Stream :",self.stream_count)

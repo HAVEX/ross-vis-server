@@ -69,6 +69,8 @@ class StreamData:
         self.clustering = Clustering()
         self.results = pd.DataFrame(data=self.df[granularity].astype(np.float64).tolist(), columns=[granularity])
         self._time = self.metric_df.columns.get_level_values(1).tolist()
+        self.granIDs = self.df[self.granularity]
+
         
 
     def _format(self):
@@ -133,6 +135,7 @@ class StreamData:
         self.metric_df = pd.concat([self.metric_df, self.new_data_df], axis=1).T.drop_duplicates().T
         self.count = self.count + 1
         self._time = self.metric_df.columns.get_level_values(1).tolist()
+        self.granIDs = self.df[self.granularity]
 
         return self     
 
@@ -140,24 +143,24 @@ class StreamData:
         if(self.count > 2):
             self.drop_prev_results(['PC0','PC1'])
             self.drop_prev_results(['cpd'])
-            #self.drop_prev_results(['from_metrics','from_causality','from_IR_1', 'from_VD_1',
-            #                        'to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'
-            #])
+            self.drop_prev_results(['from_metrics','from_causality','from_IR_1', 'from_VD_1',
+                                    'to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'
+            ])
         if(self.count > 3):
-            self.drop_prev_results(['normal', 'normal_clusters','micro', 'micro_clusters', 'macro', 'macro_clusters', 'macro_times', 'micro_times'])
+            self.drop_prev_results(['ids', 'normal', 'normal_clusters', 'normal_times','micro', 'micro_clusters', 'macro', 'macro_clusters', 'macro_times', 'micro_times'])
 
     def run_methods(self, data, algo):
         self.clean_up()
+        clustering_result = self.clustering.tick(data)
         pca_result = self.pca.tick(data, algo['pca'])
         cpd_result = self.cpd.tick(data, algo['cpd'])
-        #causal_result = self.causal.tick(data, algo['causality'])
-        clustering_result = self.clustering.tick(data)
+        causal_result = self.causal.tick(data, algo['causality'])
         
-        self.results = self.results.join(cpd_result)
-        self.results = self.results.join(pca_result)
         if(self.count > 2):
             self.results = self.results.join(clustering_result)
-        #self.results = self.results.join(causal_result)
+        self.results = self.results.join(cpd_result)
+        self.results = self.results.join(pca_result)
+        self.results = self.results.join(causal_result)
         self.results = self.results.fillna(0)   
         return self.format()
 
@@ -301,9 +304,9 @@ class PCA(StreamData):
         pca = ProgIncPCA(2, 1.0)
         pca.progressive_fit(self.time_series, latency_limit_in_msec = 10)
         self.pcs_new = pca.transform(self.time_series)
-        #geom_trans_mat = pca.adaptive_progresive_geom_trans_2d(self.pcs_curr, self.pcs_new, latency_limit_in_msec = 10)
-        #self.pcs_curr_bg = geom_trans_mat.dot(self.pcs_new.transpose()).transpose()
-        self.pcs_curr = self.pcs_new
+        geom_trans_mat = pca.adaptive_progresive_geom_trans_2d(self.pcs_curr, self.pcs_new, latency_limit_in_msec = 10)
+        self.pcs_curr_bg = geom_trans_mat.dot(self.pcs_new.transpose()).transpose()
+        self.pcs_curr = self.pcs_curr_bg
 
     def inc(self):
         pca = IncPCA(2, 1.0)
@@ -339,17 +342,20 @@ class Clustering(StreamData):
         })
 
     def _format(self):
+        normal = [(self.time_series.tolist(), self.labels, self._time, self.granIDs.tolist())]
         micro = [(self.time_series_micro.tolist(), self.labels_micro, self._time)]
         macro = [(self.time_series_macro.tolist(), self.labels_macro, self._time)]
+        normal_result = pd.DataFrame(data=normal, columns=['normal', 'normal_clusters', 'normal_times', 'ids'])
         micro_result = pd.DataFrame(data=micro, columns=['micro', 'micro_clusters', 'micro_times'])
         macro_result = pd.DataFrame(data=macro, columns=['macro', 'macro_clusters', 'macro_times'])
-        normal_result = pd.DataFrame.from_dict({'normal': np.asmatrix(self.time_series).tolist(), 'normal_clusters':self.labels })
         return [normal_result, micro_result, macro_result]
 
     def tick(self, data):
         self.metric_df = data.metric_df
         self.new_data_df = data.new_data_df
         self._time = data._time
+        self.granIDs = data.granIDs
+        self.granularity = data.granularity
         self.count = data.count 
         
         if(self.count < 2):
@@ -370,32 +376,15 @@ class Clustering(StreamData):
         self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
         self.labels = self.evo.predict(self.time_series)
         
-    def check_consistent_labels(self, current_to_prev):
-        ret = {}
-        mapper = {}
-        for i in range(self.n_clusters):
-            if i in current_to_prev:
-                ret[i] = current_to_prev[i]
-                mapper[i] = True
-            else:
-                for idx, val in enumerate(mapper):
-                    if val == False:
-                        ret[i] = val
-            print('aa')
-        print(ret)
-        return ret
-
     def evostream_update(self):
         new_time_series = self.new_data_df.values
         self.time_series = np.append(self.time_series, new_time_series, 1)
         self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec, point_choice_method="random", verbose=True)
         self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
-        self.labels, self.current_to_prev = ProgEvoStream.consistent_labels(self.labels, self.evo.predict(self.time_series))
-        #self.labels = self.evo.predict(self.time_series)
+        self.labels, self.current_to_prev = self.evo.consistent_labels(self.labels, self.evo.predict(self.time_series))
 
     def macro(self):
         self.time_series_macro = np.array(self.evo.get_macro_clusters())
-       # self.current_to_prev = self.check_consistent_labels(self.current_to_prev)
         self.labels_macro = [self.current_to_prev[i] for i in range(self.time_series_macro.shape[0])]
         self.times_macro = np.array(self._time)
 
@@ -426,7 +415,7 @@ class Causal(StreamData):
         metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
            'RbSec', 'RbTotal', 'VirtualTimeDiff', 'KpGid', 'LastGvt', 'Peid']
 
-        calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
+        calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventRb', 'NeventProcessed', \
            'RbSec', 'RbTotal', 'VirtualTimeDiff']
 
         pca = ProgIncPCA(1)
@@ -441,10 +430,12 @@ class Causal(StreamData):
             metric_ld = pca.transform(metric_nd)
             X_dict[metric] = metric_ld.flatten().tolist()
         X = pd.DataFrame(X_dict)
+        X = X.loc[:, (X != X.iloc[0]).any()]
+
 
         causality = Causality()
         causality.adaptive_progresive_var_fit(X, latency_limit_in_msec=100, point_choice_method="reverse")
-        causality_from, causality_to = causality.check_causality('RbSec', signif=0.1)
+        causality_from, causality_to = causality.check_causality(data.metric, signif=0.1)
         ir_from, ir_to = causality.impulse_response(self.metric)
         vd_from, vd_to = causality.variance_decomp(self.metric)
 

@@ -48,7 +48,7 @@ class ProgEvoStream(prog_evo_stream_cpp.ProgEvoStream):
     >>> evo.predict(X)
     [1, 1, 1, 0, 2, 0]
     >>> # convert current labels to consistent labels with previous labels
-    >>> labels, _ = ProgEvoStream.consistent_labels(labels, evo.predict(X))
+    >>> labels, _ = evo.consistent_labels(labels, evo.predict(X))
     >>> labels
     [0, 0, 0, 2, 0, 2]
     Notes
@@ -188,7 +188,6 @@ class ProgEvoStream(prog_evo_stream_cpp.ProgEvoStream):
         return super().progressive_refine_cluster(latency_limit_in_msec,
                                                   verbose)
 
-    @classmethod
     def consistent_labels(self,
                           prev_labels,
                           current_labels,
@@ -202,6 +201,9 @@ class ProgEvoStream(prog_evo_stream_cpp.ProgEvoStream):
             Cluster labels obtained in last progressiveFit.
         current_labels : array, shape [n_samples, ]
             Cluster labels obtained in current progressiveFit.
+        verbose: boolean, optional (default=False)
+            If True, print out how many data points are processsed during
+            progressive process.
         Returns
         -------
         labels : array, shape [n_samples,]
@@ -209,9 +211,6 @@ class ProgEvoStream(prog_evo_stream_cpp.ProgEvoStream):
         current_label_to_previous_label : dictionary
             Dictionary from the current label to the corresponding previous
             label.
-        verbose: boolean, optional (default=False)
-            If True, print out how many data points are processsed during
-            progressive process.
         """
         return super().consistent_labels(prev_labels, current_labels,
                                          latency_limit_in_msec, verbose)

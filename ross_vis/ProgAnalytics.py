@@ -413,7 +413,7 @@ class Causal(StreamData):
         self.df = data.df
         self.metric = data.metric
         metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
-           'RbSec', 'RbTotal', 'VirtualTimeDiff', 'KpGid', 'LastGvt', 'Peid']
+           'RbSec', 'RbTotal', 'VirtualTimeDiff', 'KpGid', 'LastGvt', 'Peid', 'RealTs', 'VirtualTs']
 
         calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventRb', 'NeventProcessed', \
            'RbSec', 'RbTotal', 'VirtualTimeDiff']

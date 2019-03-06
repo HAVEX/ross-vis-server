@@ -52,7 +52,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             'clustering': 'evostream',
         }
         self.stream_count = 0
-        self.max_stream_count = 40
+        self.max_stream_count = 10
         self.stream_objs = {}
         WebSocketHandler.waiters.add(self)
 

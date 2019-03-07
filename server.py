@@ -32,7 +32,7 @@ class Application(tornado.web.Application):
             (r"/", MainHandler),
             (r'/app/(.*)', tornado.web.StaticFileHandler, {'path': appdir}),
             (r"/data", AjaxGetJsonData),
-            (r"/pca", AjaxGetPCA),
+            (r"/analysis/(\w+)/(\w+)", AnalysisHandler),
             (r"/websocket", WebSocketHandler)
         ]
         settings = dict(
@@ -83,21 +83,27 @@ class AjaxGetJsonData(tornado.web.RequestHandler):
             'schema': schema
         })
 
-class AjaxGetPCA(tornado.web.RequestHandler):
+class AnalysisHandler(tornado.web.RequestHandler):
     def set_default_headers(self):
         self.set_header("Access-Control-Allow-Origin", "*")
         self.set_header("Access-Control-Allow-Headers", "x-requested-with")
         self.set_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
 
-    def get(self):
+    def get(self, granularity, reduction):
+        metrics = self.get_arguments('metrics')
         data = WebSocketHandler.cache.export_dict('KpData')
-        analysis = Analytics(data, index=['Peid', 'Kpid', 'RealTs', 'LastGvt', 'VirtualTs', 'KpGid', 'EventId'])
-        analysis.groupby(['Peid', 'Kpid'])
-        result = analysis.pca(2)
-        schema = {k:type(v).__name__ for k,v in data[0].items()}
+        analysis = Analytics(data, excludes=['CommData'], index=['Peid', 'Kpid', 'RealTs', 'LastGvt', 'VirtualTs', 'KpGid', 'EventId'])
+        if granularity == 'PE':
+            analysis.groupby(['Peid'])
+        else:
+            analysis.groupby(['KpGid'])
+
+        analysis.pca(2)
+        result = analysis.dbscan().kmeans()      
+
         self.write({
-            'data': result.to_dict('records'),
-            'schema': schema
+            'data': result.data.to_dict('records'),
+            'schema':result.schema
         })
 
 def main():

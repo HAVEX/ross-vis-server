@@ -20,7 +20,11 @@ from ross_vis.DataCache import RossDataCache
 from ross_vis.Transform import flatten, flatten_list
 from ross_vis.Analytics import Analytics
 
+<<<<<<< HEAD
 from webSocketHandler import WebSocketHandler
+=======
+from WebSocketServer import WebSocketHandler
+>>>>>>> 1b0e80d297e341f517d83314d96b32c3993cfff3
 
 define("http", default=8888, help="run on the given port", type=int)
 define("stream", default=8000, help="streaming on the given port", type=int)
@@ -35,8 +39,13 @@ class Application(tornado.web.Application):
             (r"/", MainHandler),
             (r'/app/(.*)', tornado.web.StaticFileHandler, {'path': appdir}),
             (r"/data", AjaxGetJsonData),
+<<<<<<< HEAD
             # (r"/pca", AjaxGetPCA),
             (r"/websocket", WebSocketHandler),
+=======
+            (r"/analysis/(\w+)/(\w+)", AnalysisHandler),
+            (r"/websocket", WebSocketHandler)
+>>>>>>> 1b0e80d297e341f517d83314d96b32c3993cfff3
         ]
         settings = dict(
             cookie_secret="'a6u^=-sr5ph027bg576b3rl@#^ho5p1ilm!q50h0syyiw#zjxwxy0&gq2j*(ofew0zg03c3cyfvo'",
@@ -44,7 +53,6 @@ class Application(tornado.web.Application):
             static_path=os.path.join(os.path.dirname(__file__), appdir+'/static'),
             xsrf_cookies=True,
         )
-        
         super(Application, self).__init__(handlers, **settings)
 
 class StreamServer(TCPServer):
@@ -80,29 +88,41 @@ class MainHandler(tornado.web.RequestHandler):
         
 class AjaxGetJsonData(tornado.web.RequestHandler):
     def get(self):
-        data = WebSocketHandler.cache.export_dict('KpData')
         schema = {k:type(v).__name__ for k,v in data[0].items()}
         self.write({
-            'data': WebSocketHandler.cache.export_dict('KpData'),
+            'data': WebSocketHandler.KpData,
             'schema': schema
         })
 
-class AjaxGetPCA(tornado.web.RequestHandler):
+class AnalysisHandler(tornado.web.RequestHandler):
     def set_default_headers(self):
         self.set_header("Access-Control-Allow-Origin", "*")
         self.set_header("Access-Control-Allow-Headers", "x-requested-with")
         self.set_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
 
-    def get(self):
+    def get(self, granularity, reduction):
+        metrics = self.get_arguments('metrics')
         data = WebSocketHandler.cache.export_dict('KpData')
+<<<<<<< HEAD
         analysis = Analytics(data, index=['Peid', 'Kpid', 'RealTs', 'LastGvt', 'VirtualTs', 'KpGid', 'EventId'])
         analysis.groupby(['Peid', 'Kpid'])
         result = analysis.pca(2)
         print(type(data))
         schema = {k:type(v).__name__ for k,v in data[0].items()}
+=======
+        analysis = Analytics(data, excludes=['CommData'], index=['Peid', 'Kpid', 'RealTs', 'LastGvt', 'VirtualTs', 'KpGid', 'EventId'])
+        if granularity == 'PE':
+            analysis.groupby(['Peid'])
+        else:
+            analysis.groupby(['KpGid'])
+
+        analysis.pca(2)
+        result = analysis.dbscan().kmeans()      
+
+>>>>>>> 1b0e80d297e341f517d83314d96b32c3993cfff3
         self.write({
-            'data': result.to_dict('records'),
-            'schema': schema
+            'data': result.data.to_dict('records'),
+            'schema':result.schema
         })
 
 def main():
@@ -110,6 +130,7 @@ def main():
 
     if (os.path.isfile(options.datafile)):
         WebSocketHandler.cache.loadfile(options.datafile)
+        WebSocketHandler.KpData = WebSocketHandler.cache.export_dict('KpData')
         print('Test mode: loaded %d samples' % WebSocketHandler.cache.size())
 
     app = Application(options.appdir)

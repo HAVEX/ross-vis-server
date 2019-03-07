@@ -2,8 +2,11 @@ import urllib
 import json
 import tornado.websocket
 import time
+<<<<<<< HEAD:webSocketHandler.py
 import multiprocessing
 from functools import partial
+=======
+>>>>>>> 1b0e80d297e341f517d83314d96b32c3993cfff3:WebSocketServer.py
 
 from ross_vis.DataModel import RossData
 from ross_vis.DataCache import RossDataCache
@@ -37,6 +40,8 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
     waiters = set()
     cache = RossDataCache()
     cache_size = 100
+    KpData = []
+    params = None
 
     def open(self):
         print('new connection')
@@ -81,7 +86,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if('data' in req and req['data'] in ['PeData', 'KpData', 'LpData']):
             self.data_attribute = req['data']
 
-        if('method' in req and req['method'] in ['stream', 'get']):
+        if('method' in req and req['method'] in ['stream', 'get', 'set']):
             self.method = req['method']
         
         if('granularity' in req and req['granularity'] in ['Peid', 'KpGid', 'Lpid', 'Kpid']):
@@ -135,7 +140,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                         self.stream_objs[metric]['data'].to_csv()
                     self.on_close()
 
-        if(self.method == 'stream-test'):
+        if(self.method == 'stream-next'):
             rd = RossData([self.data_attribute])
             sample = WebSocketHandler.cache.data.pop(0)
             msg = {'data': flatten(rd.fetch(sample))}
@@ -148,15 +153,25 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 'data': data,
                 'schema': schema
             })
+            
+            msg = {'data': data, 'schema': schema}
+            if(WebSocketHandler.params != None):
+                msg['params'] = self.params
+            self.write_message(msg)
+
+        if(self.method == 'set'):
+            WebSocketHandler.params = req['params']
+            self.write_message({'status': 'ok'})
+            print(WebSocketHandler.params)
 
     def on_close(self):
         print('connection closed')
         WebSocketHandler.waiters.remove(self)
 
     def check_origin(self, origin):
-        # return True
-        parsed_origin = urllib.parse.urlparse(origin)
-        return parsed_origin.netloc.startswith("localhost:")
+        return True
+        # parsed_origin = urllib.parse.urlparse(origin)
+        # return parsed_origin.netloc.startswith("localhost:")
 
     @classmethod
     def push_updates(cls, data):

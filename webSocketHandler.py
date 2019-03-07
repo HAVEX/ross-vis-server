@@ -43,7 +43,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         self.data_attribute = 'PeData'
         self.method = 'get' 
         self.granularity = 'Peid'
-        self.metric = ['RbSec', 'NeventProcessed']
+        self.metric = ['NeventProcessed']
         self.time_domain = 'LastGvt'
         self.algo = {
             'cpd': 'aff',
@@ -52,7 +52,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             'clustering': 'evostream',
         }
         self.stream_count = 0
-        self.max_stream_count = 10
+        self.max_stream_count = 100
         self.stream_objs = {}
         WebSocketHandler.waiters.add(self)
 
@@ -118,11 +118,9 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     msg = {}
                     for idx, metric in enumerate(self.metric):
                         r = res.get(metric)
-                        ret_df = r[0]
-                        result = r[1]
-                        schema = r[2]
+                        result = r[0]
+                        schema = r[1]
                         msg[metric] = {
-                            'data': ret_df,
                             'result': result,
                             'schema': schema
                         }

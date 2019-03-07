@@ -95,7 +95,7 @@ class StreamData:
 
     def format(self):
         schema = {k:self.process_type(type(v).__name__) for k,v in self.df.iloc[0].items()}
-        return (self.df.to_dict('records'), self.results.to_dict('records'), schema)
+        return  (self.results.to_dict('records'), schema)
 
     def groupby(self, df, keys, metric = 'mean'):
         # Groups data by the keys provided
@@ -139,12 +139,13 @@ class StreamData:
 
     def clean_up(self):
         if(self.count > 2):
-            self.drop_prev_results(['PC0','PC1'])
             self.drop_prev_results(['cpd'])
             self.drop_prev_results(['from_metrics','from_causality','from_IR_1', 'from_VD_1',
                                     'to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'
             ])
+
         if(self.count > 3):
+            self.drop_prev_results(['PC0','PC1'])
             self.drop_prev_results(['ids', 'normal', 'normal_clusters', 'normal_times','micro', 'micro_clusters', 'macro', 'macro_clusters', 'macro_times', 'micro_times'])
 
     def run_methods(self, data, algo):
@@ -156,8 +157,8 @@ class StreamData:
         
         if(self.count > 2):
             self.results = self.results.join(clustering_result)
+            self.results = self.results.join(pca_result)
         self.results = self.results.join(cpd_result)
-        self.results = self.results.join(pca_result)
         self.results = self.results.join(causal_result)
         self.results = self.results.fillna(0)   
         return self.format()
@@ -274,9 +275,9 @@ class PCA(StreamData):
         self.method = method
         self.count = data.count
 
-        if(self.count < 2):
+        if(self.count <= 2):
             pass
-        elif(self.count == 2):
+        elif(self.count > 2):
             if(method == 'prog_inc'):
                 self.prog_inc()
             elif(self.method == 'inc'):
@@ -292,15 +293,16 @@ class PCA(StreamData):
     def prog_inc(self):
         pca = ProgIncPCA(2, 1.0)
         self.time_series = self.metric_df.values
-        print(self.time_series.shape)
+        print('PCA', self.time_series.shape)
         pca.progressive_fit(self.time_series, 10, "random")
         self.pcs_curr = pca.transform(self.time_series) 
         pca.get_loadings()
 
     def prog_inc_update(self):
         new_time_series = self.new_data_df.values
+        print(new_time_series)
         self.time_series = np.append(self.time_series, new_time_series, 1)
-        print(self.time_series.shape)
+        print('PCA', self.time_series.shape)
         pca = ProgIncPCA(2, 1.0)
         pca.progressive_fit(self.time_series, latency_limit_in_msec = 10)
         self.pcs_new = pca.transform(self.time_series)
@@ -415,10 +417,10 @@ class Causal(StreamData):
         # metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
         # 'RbSec', 'RbTotal', 'VirtualTimeDiff', 'LastGvt', 'Peid', 'KpGid']
         metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
-              'RbSec', 'RbTotal', 'VirtualTimeDiff', 'LastGvt', 'Peid']
+              'RbSec', 'RbTime', 'RbTotal', 'VirtualTimeDiff', 'LastGvt', 'KpGid']
 
         calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventRb', 'NeventProcessed', \
-           'RbSec', 'RbTotal', 'VirtualTimeDiff']
+           'RbSec', 'RbTime', 'VirtualTimeDiff']
 
         pca = ProgIncPCA(1)
         total_latency_for_pca = 100
@@ -440,18 +442,10 @@ class Causal(StreamData):
         is_non_const_col = (X != X.iloc[0]).any()
         X = X.loc[:, is_non_const_col]
 
-        causality = Causality()
-        causality.adaptive_progresive_var_fit(
-            X, latency_limit_in_msec=100, point_choice_method="reverse")
-
         causality_from = pd.DataFrame(
             index=[0], columns=calc_metrics).fillna(False)
         causality_to = pd.DataFrame(
             index=[0], columns=calc_metrics).fillna(False)
-
-        causality_from.loc[0, is_non_const_col], causality_to.loc[
-            0, is_non_const_col] = causality.check_causality(
-                data.metric, signif=0.1)
 
         ir_from = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
         ir_to = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
@@ -459,21 +453,33 @@ class Causal(StreamData):
         vd_from = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
         vd_to = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
 
-        try:
-            tmp_ir_from, tmp_ir_to = causality.impulse_response(self.metric)
-            ir_from.loc[0, is_non_const_col] = tmp_ir_from[:, 1]
-            ir_to.loc[0, is_non_const_col] = tmp_ir_to[:, 1]
-        except:
-            print("impulse reseponse was not excuted. probably matrix is not",
-                  "positive definite")
+        if is_non_const_col.loc[data.metric]:
+            causality = Causality()
+            causality.adaptive_progresive_var_fit(
+                X, latency_limit_in_msec=100, point_choice_method="reverse")
 
-        try:
-            tmp_vd_from, tmp_vd_to = causality.variance_decomp(self.metric)
-            vd_from.loc[0, is_non_const_col] = tmp_vd_from[:, 1]
-            vd_to.loc[0, is_non_const_col] = tmp_vd_to[:, 1]
-        except:
-            print("impulse reseponse was not excuted. probably matrix is not",
-                  "positive definite")
+            causality_from.loc[0, is_non_const_col], causality_to.loc[
+                0, is_non_const_col] = causality.check_causality(
+                    data.metric, signif=0.1)
+
+            try:
+                tmp_ir_from, tmp_ir_to = causality.impulse_response(
+                    self.metric)
+                ir_from.loc[0, is_non_const_col] = tmp_ir_from[:, 1]
+                ir_to.loc[0, is_non_const_col] = tmp_ir_to[:, 1]
+            except:
+                print(
+                    "impulse reseponse was not excuted. probably matrix is not",
+                    "positive definite")
+
+            try:
+                tmp_vd_from, tmp_vd_to = causality.variance_decomp(self.metric)
+                vd_from.loc[0, is_non_const_col] = tmp_vd_from[:, 1]
+                vd_to.loc[0, is_non_const_col] = tmp_vd_to[:, 1]
+            except:
+                print(
+                    "impulse reseponse was not excuted. probably matrix is not",
+                    "positive definite")
 
         causality_from = causality_from.loc[0, :].tolist()
         causality_to = causality_to.loc[0, :].tolist()

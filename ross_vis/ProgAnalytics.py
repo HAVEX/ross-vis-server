@@ -143,8 +143,6 @@ class StreamData:
             self.drop_prev_results(['from_metrics','from_causality','from_IR_1', 'from_VD_1',
                                     'to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'
             ])
-
-        if(self.count > 3):
             self.drop_prev_results(['PC0','PC1'])
             self.drop_prev_results(['ids', 'normal', 'normal_clusters', 'normal_times','micro', 'micro_clusters', 'macro', 'macro_clusters', 'macro_times', 'micro_times'])
 
@@ -155,11 +153,11 @@ class StreamData:
         cpd_result = self.cpd.tick(data, algo['cpd'])
         causal_result = self.causal.tick(data, algo['causality'])
         
-        if(self.count > 2):
+        if(self.count >= 2):
             self.results = self.results.join(clustering_result)
             self.results = self.results.join(pca_result)
-        self.results = self.results.join(cpd_result)
-        self.results = self.results.join(causal_result)
+            self.results = self.results.join(cpd_result)
+            self.results = self.results.join(causal_result)
         self.results = self.results.fillna(0)   
         return self.format()
 
@@ -275,9 +273,9 @@ class PCA(StreamData):
         self.method = method
         self.count = data.count
 
-        if(self.count <= 2):
+        if(self.count < 2):
             pass
-        elif(self.count > 2):
+        elif(self.count >= 2):
             if(method == 'prog_inc'):
                 self.prog_inc()
             elif(self.method == 'inc'):
@@ -362,14 +360,19 @@ class Clustering(StreamData):
         
         if(self.count < 2):
             return {}
-
         if(self.count == 2):
             self.evostream()
         elif(self.count > 2):
             self.evostream_update()
-            self.macro()
-            self.micro()
-            return self._format()
+        self.macro()
+        self.micro()
+        return self._format()
+
+    def emptyCurrentToPrev(self):
+        ret = {}
+        for idx in range(self.n_clusters):
+            ret[idx] = 0
+        return ret
 
     def evostream(self):
         self.time_series = self.metric_df.values
@@ -377,6 +380,7 @@ class Clustering(StreamData):
         self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec)
         self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
         self.labels = self.evo.predict(self.time_series)
+        self.current_to_prev = self.emptyCurrentToPrev()
         
     def evostream_update(self):
         new_time_series = self.new_data_df.values
@@ -384,6 +388,7 @@ class Clustering(StreamData):
         self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec, point_choice_method="random", verbose=True)
         self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
         self.labels, self.current_to_prev = self.evo.consistent_labels(self.labels, self.evo.predict(self.time_series))
+        print(self.current_to_prev)
 
     def macro(self):
         self.time_series_macro = np.array(self.evo.get_macro_clusters())

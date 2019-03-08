@@ -2,11 +2,6 @@ import urllib
 import json
 import tornado.websocket
 import time
-<<<<<<< HEAD:webSocketHandler.py
-import multiprocessing
-from functools import partial
-=======
->>>>>>> 1b0e80d297e341f517d83314d96b32c3993cfff3:WebSocketServer.py
 
 from ross_vis.DataModel import RossData
 from ross_vis.DataCache import RossDataCache
@@ -44,7 +39,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
     params = None
 
     def open(self):
-        print('new connection')
         self.data_attribute = 'PeData'
         self.method = 'get' 
         self.granularity = 'Peid'
@@ -57,13 +51,14 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             'clustering': 'evostream',
         }
         self.stream_count = 0
-        self.max_stream_count = 100
         self.stream_objs = {}
+        self.max_stream_count = 20
         WebSocketHandler.waiters.add(self)
 
     def process(self, stream):  
         ret = {}                  
         for idx, metric in enumerate(self.metric):
+            print('Calculating results for {0}'.format(metric))
             if self.stream_count == 0: 
                 self.stream_data = StreamData(stream, self.granularity, metric, self.time_domain)
                 self.stream_objs[metric] = self.stream_data
@@ -73,7 +68,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 self.stream_data = stream_obj.update(stream)
                 ret[metric] = self.stream_data.format()
             else:
-                print('Calculating results for {0}'.format(metric))
                 stream_obj = self.stream_objs[metric]
                 self.stream_data = stream_obj.update(stream)
                 ret[metric] = stream_obj.run_methods(self.stream_data, self.algo)
@@ -109,36 +103,35 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
         if('metric' in req):
             self.metric = req['metric']   
-        
+
+        if('stream_count' in req):
+            self.stream_count = req['stream_count']
+
+
         if(self.method == 'stream'):
             rd = RossData([self.data_attribute])
-            #pool = multiprocessing.Pool()   
-            print("Data Attribute", self.data_attribute)         
-            print("Granularity", self.granularity)
-            for sample in WebSocketHandler.cache.data:
-                if self.stream_count < self.max_stream_count:
-                    print("Stream :",self.stream_count)
-                    stream = flatten(rd.fetch(sample))
-                    res = self.process(stream)
-                    msg = {}
-                    for idx, metric in enumerate(self.metric):
-                        r = res.get(metric)
-                        result = r[0]
-                        schema = r[1]
-                        msg[metric] = {
-                            'result': result,
-                            'schema': schema
-                        }
+            #pool = multiprocessing.Pool()  
+            sample = WebSocketHandler.cache.data[self.stream_count]
+            stream = flatten(rd.fetch(sample))
+            res = self.process(stream)
+            msg = {}
+            for idx, metric in enumerate(self.metric):
+                r = res.get(metric)
+                result = r[0]
+                schema = r[1]
+                msg[metric] = {
+                    'result': result,
+                    'schema': schema
+                }
+            self.write_message(msg)
                     #stream_data = StreamData(stream, self.granularity, self.time_domain)
                     #func = partial(process, stream_data, self.data_count, self.algo, self.time_domain, self.granularity, stream)
                     #msg = pool.map(func, self.metric)
-                    self.stream_count = self.stream_count + 1
-                    self.write_message(msg)
-                else:
-                    for idx, metric in enumerate(self.metric):
-                        print('writing {0} attribute to {0}.csv'.format(metric))
-                        self.stream_objs[metric]['data'].to_csv()
-                    self.on_close()
+                # else:
+                #     for idx, metric in enumerate(self.metric):
+                #         print('writing {0} attribute to {0}.csv'.format(metric))
+                #         self.stream_objs[metric]['data'].to_csv()
+                #     self.on_close()
 
         if(self.method == 'stream-next'):
             rd = RossData([self.data_attribute])

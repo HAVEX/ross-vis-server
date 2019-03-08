@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import timeit
+import time
 from collections import defaultdict
 
 # Change point detection methods
@@ -60,9 +60,10 @@ class StreamData:
         self.time_domain = time_domain
         self.metric = metric
         self.df = pd.DataFrame(data)
+        self.new_data_df = self.df
         self.metric_df = self.preprocess(self.df)
         # set new_data_df for the first stream as metric_df
-        self.new_data_df = self.metric_df
+        self.whole_data_df = self.metric_df
         self.cpd = CPD()
         self.pca = PCA()
         self.causal = Causal()
@@ -124,9 +125,9 @@ class StreamData:
         self.results.drop(attrs, axis=1, inplace=True)
 
     def update(self, new_data):
-        new_data_df = pd.DataFrame(new_data)
-        self.df = pd.concat([self.df, new_data_df]) 
-        self.new_data_df = self.preprocess(new_data_df)
+        self.whole_data_df = pd.DataFrame(new_data)
+        self.df = pd.concat([self.df, self.whole_data_df]) 
+        self.new_data_df = self.preprocess(self.whole_data_df)
         # To avoid Nan values while concat
         self.metric_df.reset_index(drop=True, inplace=True)
         self.new_data_df.reset_index(drop=True, inplace=True)
@@ -141,12 +142,13 @@ class StreamData:
         if(self.count > 2):
             self.drop_prev_results(['cpd'])
             self.drop_prev_results(['from_metrics','from_causality','from_IR_1', 'from_VD_1',
-                                    'to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'
+                                   'to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'
             ])
             self.drop_prev_results(['PC0','PC1'])
             self.drop_prev_results(['ids', 'normal', 'normal_clusters', 'normal_times','micro', 'micro_clusters', 'macro', 'macro_clusters', 'macro_times', 'micro_times'])
 
     def run_methods(self, data, algo):
+        start = time.time()
         self.clean_up()
         clustering_result = self.clustering.tick(data)
         pca_result = self.pca.tick(data, algo['pca'])
@@ -159,12 +161,12 @@ class StreamData:
             self.results = self.results.join(cpd_result)
             self.results = self.results.join(causal_result)
         self.results = self.results.fillna(0)   
+        print(time.time() - start)
         return self.format()
 
     def to_csv(self):
         # Write the metric_df to a csv file
         self.df.to_csv(self.metric + '.csv')
-
 
 class CPD(StreamData):
     # Perform Change point detection on Streaming data.
@@ -403,7 +405,7 @@ class Clustering(StreamData):
 
 class Causal(StreamData):
     def __init__(self):
-        pass
+        self.pivot_table_results = {}
 
     def numpybool_to_bool(self, arr):
         ret = []
@@ -416,13 +418,20 @@ class Causal(StreamData):
                 ret.append(-1)
         return ret
 
+    def flatten(self, l):
+        flat_list = []
+        for sublist in l:
+            for item in sublist:
+                flat_list.append(item)
+        return flat_list
+
+
     def tick(self, data, method):
-        self.df = data.df
+        self.df = data.whole_data_df
         self.metric = data.metric
         # metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
         # 'RbSec', 'RbTotal', 'VirtualTimeDiff', 'LastGvt', 'Peid', 'KpGid']
-        metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
-              'RbSec', 'RbTime', 'RbTotal', 'VirtualTimeDiff', 'LastGvt', 'KpGid']
+        metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', 'RbTime', 'RbTotal', 'VirtualTimeDiff', 'LastGvt', 'KpGid']
 
         calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventRb', 'NeventProcessed', \
            'RbSec', 'RbTime', 'VirtualTimeDiff']
@@ -430,20 +439,30 @@ class Causal(StreamData):
         pca = ProgIncPCA(1)
         total_latency_for_pca = 100
         latency_for_each = int(total_latency_for_pca / len(metrics))
-        X_dict = {}
+        n = 128
+        X = np.empty(shape=(n, len(metrics)))
         self.df = self.df[metrics]
 
-        for metric in calc_metrics:
-            metric_nd = data.processByMetric(self.df, metric).values
+        flattenA = lambda l: [item for sublist in l for item in sublist]
+
+        for i, metric in enumerate(calc_metrics):
+            start = time.time()
+            metric_pd = data.processByMetric(self.df, metric)
+            if(metric not in self.pivot_table_results):
+                self.pivot_table_results[metric] = metric_pd
+            else:
+                self.pivot_table_results[metric] = pd.concat([self.pivot_table_results[metric], metric_pd])
+                metric_nd = self.pivot_table_results[metric]
+            metric_nd = metric_pd.values
             pca.progressive_fit(
                 metric_nd,
                 latency_limit_in_msec=latency_for_each,
                 point_choice_method='random',
                 verbose=True)
-            metric_ld = pca.transform(metric_nd)
-            X_dict[metric] = metric_ld.flatten().tolist()
-
-        X = pd.DataFrame(X_dict)
+            metric_1d = pca.transform(metric_nd)
+            X[:, i] = metric_1d[:, 0]
+            
+        X = pd.DataFrame(X, columns=metrics)
         is_non_const_col = (X != X.iloc[0]).any()
         X = X.loc[:, is_non_const_col]
 
@@ -458,33 +477,33 @@ class Causal(StreamData):
         vd_from = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
         vd_to = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
 
-        if is_non_const_col.loc[data.metric]:
-            causality = Causality()
-            causality.adaptive_progresive_var_fit(
-                X, latency_limit_in_msec=100, point_choice_method="reverse")
+        # if is_non_const_col.loc[data.metric]:
+        #     causality = Causality()
+        #     causality.adaptive_progresive_var_fit(
+        #         X, latency_limit_in_msec=100, point_choice_method="reverse")
 
-            causality_from.loc[0, is_non_const_col], causality_to.loc[
-                0, is_non_const_col] = causality.check_causality(
-                    data.metric, signif=0.1)
+        #     causality_from.loc[0, is_non_const_col], causality_to.loc[
+        #         0, is_non_const_col] = causality.check_causality(
+        #             data.metric, signif=0.1)
 
-            try:
-                tmp_ir_from, tmp_ir_to = causality.impulse_response(
-                    self.metric)
-                ir_from.loc[0, is_non_const_col] = tmp_ir_from[:, 1]
-                ir_to.loc[0, is_non_const_col] = tmp_ir_to[:, 1]
-            except:
-                print(
-                    "impulse reseponse was not excuted. probably matrix is not",
-                    "positive definite")
+        #     try:
+        #         tmp_ir_from, tmp_ir_to = causality.impulse_response(
+        #             self.metric)
+        #         ir_from.loc[0, is_non_const_col] = tmp_ir_from[:, 1]
+        #         ir_to.loc[0, is_non_const_col] = tmp_ir_to[:, 1]
+        #     except:
+        #         print(
+        #             "impulse reseponse was not excuted. probably matrix is not",
+        #             "positive definite")
 
-            try:
-                tmp_vd_from, tmp_vd_to = causality.variance_decomp(self.metric)
-                vd_from.loc[0, is_non_const_col] = tmp_vd_from[:, 1]
-                vd_to.loc[0, is_non_const_col] = tmp_vd_to[:, 1]
-            except:
-                print(
-                    "impulse reseponse was not excuted. probably matrix is not",
-                    "positive definite")
+        #     try:
+        #         tmp_vd_from, tmp_vd_to = causality.variance_decomp(self.metric)
+        #         vd_from.loc[0, is_non_const_col] = tmp_vd_from[:, 1]
+        #         vd_to.loc[0, is_non_const_col] = tmp_vd_to[:, 1]
+        #     except:
+        #         print(
+        #             "impulse reseponse was not excuted. probably matrix is not",
+        #             "positive definite")
 
         causality_from = causality_from.loc[0, :].tolist()
         causality_to = causality_to.loc[0, :].tolist()
@@ -508,6 +527,3 @@ class Causal(StreamData):
             columns=['to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'])
 
         return [from_result, to_result]
-
-
-

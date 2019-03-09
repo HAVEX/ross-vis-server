@@ -77,6 +77,16 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 self.stream_data = stream_obj.update(stream)
                 ret[metric] = stream_obj.run_methods(self.stream_data, self.algo)
         return ret 
+    
+    def pre_calc(self):
+        for idx, metric in enumerate(self.metric):
+            ret = {}
+            filename = self.stream_count + self.metric + '.csv'
+            print("Reading from {0}".format(filename))
+            results = pd.read_csv(filename)
+            schema = {k:self.process_type(type(v).__name__) for k,v in self.df.iloc[0].items()}
+            ret[metric] = (results.to_dict('records'), schema)
+        return ret
 
     def on_message(self, message, binary=False):
         req = json.loads(message)
@@ -85,7 +95,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if('data' in req and req['data'] in ['PeData', 'KpData', 'LpData']):
             self.data_attribute = req['data']
 
-        if('method' in req and req['method'] in ['stream', 'get', 'set', 'get-count']):
+        if('method' in req and req['method'] in ['stream', 'get', 'set', 'get-count', 'pre-calc']):
             self.method = req['method']
         
         if('granularity' in req and req['granularity'] in ['Peid', 'KpGid', 'Lpid', 'Kpid']):
@@ -128,6 +138,19 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 }
             self.write_message(msg)
 
+        if(self.method == 'pre-calc'):
+            res = self.pre_calc()
+            msg = {}
+            for idx, metric in enumerate(self.metric):
+                r = res.get(metric)
+                result = r[0]
+                schema = r[1]
+                msg[metric] = {
+                    'result': result,
+                    'schema': schema
+                }
+            self.write_message(msg)
+
         if(self.method == 'stream-next'):
             rd = RossData([self.data_attribute])
             sample = WebSocketHandler.cache.data.pop(0)
@@ -148,14 +171,9 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 msg['params'] = self.params
             self.write_message(msg)
 
+
         if(self.method == 'get-count'):
             data = WebSocketHandler.cache.export_dict_count(self.data_attribute, self.stream_count)
-            # rd = RossData([self.data_attribute])
-            # for i in range(0, self.stream_count):
-            #     sample = WebSocketHandler.cache.data[i]
-            #     stream = flatten(rd.fetch(sample))
-            #     data.append(stream)
-            # data = data.export_dict(self.data_attribute)
             schema = {k: type(v).__name__ for k, v in data[0].items()}
             self.write_message({
                 'data': data,

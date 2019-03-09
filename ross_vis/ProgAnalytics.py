@@ -161,12 +161,17 @@ class StreamData:
             self.results = self.results.join(cpd_result)
             self.results = self.results.join(causal_result)
         self.results = self.results.fillna(0)   
-        print(time.time() - start)
+        print("Time to compute results", time.time() - start)
+        self.to_csv(self.count)
         return self.format()
 
-    def to_csv(self):
+    def to_csv(self, filename):
         # Write the metric_df to a csv file
-        self.df.to_csv(self.metric + '.csv')
+        self.results.to_csv(str(filename) + str(self.metric) + '.csv')
+
+    def from_csv(self, filename):
+        self.results = pd.read_csv(str(filename) + str(self.metric) + '.csv')
+        return self.format()
 
 class CPD(StreamData):
     # Perform Change point detection on Streaming data.

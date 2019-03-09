@@ -24,6 +24,8 @@ class RossDataCache:
         
         return flatten(results)
 
+    
+
     def loadfile(self, filename):
         with open(filename, "rb") as binary_file:
             # Read the whole file at once
@@ -46,6 +48,17 @@ class RossDataCache:
         for row in self.data:
             results.append(dm.fetch(row))
         
+        return flatten_list(results)
+    
+    def export_dict_count(self, include=None, count=1):
+        dm = RossData([include])
+        results = []
+        for idx, row in enumerate(self.data):
+            print(idx)
+            if(idx < count):
+                results.append(dm.fetch(row))
+            else:
+                break
         return flatten_list(results)
 
     def export_json(self, include = None):

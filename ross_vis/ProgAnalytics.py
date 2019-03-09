@@ -477,33 +477,32 @@ class Causal(StreamData):
         vd_from = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
         vd_to = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
 
-        if is_non_const_col.loc[data.metric]:
-            causality = Causality()
-            causality.adaptive_progresive_var_fit(
-                X, latency_limit_in_msec=100, point_choice_method="reverse")
+        # if is_non_const_col.loc[data.metric]:
+        #     causality = Causality()
+        #     causality.adaptive_progresive_var_fit(
+        #         X, latency_limit_in_msec=100, point_choice_method="reverse")
 
-            causality_from.loc[0, is_non_const_col], causality_to.loc[
-                0, is_non_const_col] = causality.check_causality(
-                    data.metric, signif=0.1)
+        #     causality_from.loc[0, is_non_const_col], causality_to.loc[
+        #         0, is_non_const_col] = causality.check_causality(data.metric, signif=0.1)
 
-            try:
-                tmp_ir_from, tmp_ir_to = causality.impulse_response(
-                    self.metric)
-                ir_from.loc[0, is_non_const_col] = tmp_ir_from[:, 1]
-                ir_to.loc[0, is_non_const_col] = tmp_ir_to[:, 1]
-            except:
-                print(
-                    "impulse reseponse was not excuted. probably matrix is not",
-                    "positive definite")
+        #     try:
+        #         tmp_ir_from, tmp_ir_to = causality.impulse_response(
+        #             self.metric)
+        #         ir_from.loc[0, is_non_const_col] = tmp_ir_from[:, 1]
+        #         ir_to.loc[0, is_non_const_col] = tmp_ir_to[:, 1]
+        #     except:
+        #         print(
+        #             "impulse reseponse was not excuted. probably matrix is not",
+        #             "positive definite")
 
-            try:
-                tmp_vd_from, tmp_vd_to = causality.variance_decomp(self.metric)
-                vd_from.loc[0, is_non_const_col] = tmp_vd_from[:, 1]
-                vd_to.loc[0, is_non_const_col] = tmp_vd_to[:, 1]
-            except:
-                print(
-                    "impulse reseponse was not excuted. probably matrix is not",
-                    "positive definite")
+        #     try:
+        #         tmp_vd_from, tmp_vd_to = causality.variance_decomp(self.metric)
+        #         vd_from.loc[0, is_non_const_col] = tmp_vd_from[:, 1]
+        #         vd_to.loc[0, is_non_const_col] = tmp_vd_to[:, 1]
+        #     except:
+        #         print(
+        #             "impulse reseponse was not excuted. probably matrix is not",
+        #              "positive definite")
 
         causality_from = causality_from.loc[0, :].tolist()
         causality_to = causality_to.loc[0, :].tolist()

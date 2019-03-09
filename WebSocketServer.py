@@ -30,6 +30,11 @@ def processWorker(stream_count, algo, time_domain, granularity, stream, metric):
             'clustering': clustering_result,
         }
         return msg  
+
+pool = multiprocessing.Pool()  
+stream_data = StreamData(stream, self.granularity, self.time_domain)
+func = partial(process, stream_data, self.data_count, self.algo, self.time_domain, self.granularity, stream)
+msg = pool.map(func, self.metric)
  """
 class WebSocketHandler(tornado.websocket.WebSocketHandler):
     waiters = set()
@@ -80,7 +85,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if('data' in req and req['data'] in ['PeData', 'KpData', 'LpData']):
             self.data_attribute = req['data']
 
-        if('method' in req and req['method'] in ['stream', 'get', 'set']):
+        if('method' in req and req['method'] in ['stream', 'get', 'set', 'get-count']):
             self.method = req['method']
         
         if('granularity' in req and req['granularity'] in ['Peid', 'KpGid', 'Lpid', 'Kpid']):
@@ -107,10 +112,8 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if('stream_count' in req):
             self.stream_count = req['stream_count']
 
-
         if(self.method == 'stream'):
             rd = RossData([self.data_attribute])
-            #pool = multiprocessing.Pool()  
             sample = WebSocketHandler.cache.data[self.stream_count]
             stream = flatten(rd.fetch(sample))
             res = self.process(stream)
@@ -124,14 +127,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     'schema': schema
                 }
             self.write_message(msg)
-                    #stream_data = StreamData(stream, self.granularity, self.time_domain)
-                    #func = partial(process, stream_data, self.data_count, self.algo, self.time_domain, self.granularity, stream)
-                    #msg = pool.map(func, self.metric)
-                # else:
-                #     for idx, metric in enumerate(self.metric):
-                #         print('writing {0} attribute to {0}.csv'.format(metric))
-                #         self.stream_objs[metric]['data'].to_csv()
-                #     self.on_close()
 
         if(self.method == 'stream-next'):
             rd = RossData([self.data_attribute])
@@ -141,6 +136,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
         if(self.method == 'get'):
             data = WebSocketHandler.cache.export_dict(self.data_attribute)
+            print(type(data))
             schema = {k:type(v).__name__ for k,v in data[0].items()}
             self.write_message({
                 'data': data,
@@ -151,6 +147,20 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             if(WebSocketHandler.params != None):
                 msg['params'] = self.params
             self.write_message(msg)
+
+        if(self.method == 'get-count'):
+            data = WebSocketHandler.cache.export_dict_count(self.data_attribute, self.stream_count)
+            # rd = RossData([self.data_attribute])
+            # for i in range(0, self.stream_count):
+            #     sample = WebSocketHandler.cache.data[i]
+            #     stream = flatten(rd.fetch(sample))
+            #     data.append(stream)
+            # data = data.export_dict(self.data_attribute)
+            schema = {k: type(v).__name__ for k, v in data[0].items()}
+            self.write_message({
+                'data': data,
+                'schema': schema
+            })
 
         if(self.method == 'set'):
             WebSocketHandler.params = req['params']

@@ -68,14 +68,17 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 self.stream_data = StreamData(stream, self.granularity, metric, self.time_domain)
                 self.stream_objs[metric] = self.stream_data
                 ret[metric] = self.stream_data.format()
+                ret['data'] = [{}, {}]
             elif self.stream_count < 2: 
                 stream_obj = self.stream_objs[metric]
                 self.stream_data = stream_obj.update(stream)
                 ret[metric] = self.stream_data.format()
+                ret['data'] = stream_obj.comm_data()
             else:
                 stream_obj = self.stream_objs[metric]
                 self.stream_data = stream_obj.update(stream)
                 ret[metric] = stream_obj.run_methods(self.stream_data, self.algo)
+                ret['data'] = stream_obj.comm_data()
         return ret 
     
     def pre_calc(self):
@@ -132,10 +135,19 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 r = res.get(metric)
                 result = r[0]
                 schema = r[1]
+               
                 msg[metric] = {
-                    'result': result,
-                    'schema': schema
+                    'result': r[0],
+                    'schema': r[1]
                 }
+            d = res.get('data')
+            if(self.stream_count > 0):
+                msg['comm'] = {
+                    'data': d[0],
+                    'time': d[1],
+                    'schema': d[2],
+                }
+                
             self.write_message(msg)
 
         if(self.method == 'pre-calc'):

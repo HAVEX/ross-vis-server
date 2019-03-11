@@ -98,6 +98,13 @@ class StreamData:
         schema = {k:self.process_type(type(v).__name__) for k,v in self.df.iloc[0].items()}
         return  (self.results.to_dict('records'), schema)
 
+    def comm_data(self):
+        columns = ['CommData', 'RbTotal', 'RbSec', 'Kpid', 'Peid', 'LastGvt']
+        _df = self.df[columns]
+        _time = self.df[self.time_domain].unique()[self.count]
+        _schema = {k:self.process_type(type(v).__name__) for k,v in _df.iloc[0].items()}
+        return (_df.to_dict('records'), _time, _schema)
+
     def groupby(self, df, keys, metric = 'mean'):
         # Groups data by the keys provided
         self.groups = df.groupby(keys)
@@ -162,7 +169,7 @@ class StreamData:
             self.results = self.results.join(causal_result)
         self.results = self.results.fillna(0)   
         print("Time to compute results", time.time() - start)
-        self.to_csv(self.count)
+        #self.to_csv(self.count)
         return self.format()
 
     def to_csv(self, filename):

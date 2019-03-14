@@ -145,6 +145,17 @@ class StreamData:
 
         return self     
 
+    def deupdate(self, remove_data):
+        self.whole_data_df = pd.DataFrame(remove_data)
+        this_time = self.whole_data_df[self.time_domain].unique()[0]
+        self.df = self.df[self.df[self.time_domain] != this_time]
+        print(this_time, self.metric_df.columns)
+        #self.metric_df.drop(columns=[this_time])
+        self.count = self.count - 1
+        self._time = this_time
+        self.granIDs = self.df[self.granularity]  
+        return self
+
     def clean_up(self):
         if(self.count > 2):
             self.drop_prev_results(['cpd'])
@@ -441,9 +452,9 @@ class Causal(StreamData):
     def tick(self, data, method):
         self.df = data.whole_data_df
         self.metric = data.metric
-        # metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', \
-        # 'RbSec', 'RbTotal', 'VirtualTimeDiff', 'LastGvt', 'Peid', 'KpGid']
-        metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', 'RbTime', 'RbTotal', 'VirtualTimeDiff', 'LastGvt', 'KpGid']
+        
+        metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
+         'RbTime', 'RbTotal', 'VirtualTimeDiff', 'LastGvt', 'KpGid']
 
         calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventRb', 'NeventProcessed', \
            'RbSec', 'RbTime', 'VirtualTimeDiff']
@@ -455,28 +466,34 @@ class Causal(StreamData):
         X = np.empty(shape=(n, len(metrics)))
         self.df = self.df[metrics]
 
-        flattenA = lambda l: [item for sublist in l for item in sublist]
-
-        for i, metric in enumerate(calc_metrics):
+        for i, metric in enumerate(metrics):
             start = time.time()
-            metric_pd = data.processByMetric(self.df, metric)
-            if(metric not in self.pivot_table_results):
-                self.pivot_table_results[metric] = metric_pd
-            else:
-                self.pivot_table_results[metric] = pd.concat([self.pivot_table_results[metric], metric_pd])
-                metric_nd = self.pivot_table_results[metric]
-            metric_nd = metric_pd.values
+            if metric != 'LastGvt' and  metric != 'KpGid':
+                metric_pd = data.processByMetric(self.df, metric)
+                if(metric not in self.pivot_table_results):
+                    self.pivot_table_results[metric] = metric_pd
+                else:
+                    self.pivot_table_results[metric] = pd.concat([self.pivot_table_results[metric], metric_pd])
+                    metric_nd = self.pivot_table_results[metric]
+                metric_nd = metric_pd.values
+            
+        for i, metric in enumerate(calc_metrics):
             pca.progressive_fit(
-                metric_nd,
-                latency_limit_in_msec=latency_for_each,
-                point_choice_method='random',
-                verbose=True)
+                    metric_nd,
+                    latency_limit_in_msec=latency_for_each,
+                    point_choice_method='random',
+                    verbose=True)
             metric_1d = pca.transform(metric_nd)
             X[:, i] = metric_1d[:, 0]
-            
+
         X = pd.DataFrame(X, columns=metrics)
+        X = X[calc_metrics]
         is_non_const_col = (X != X.iloc[0]).any()
         X = X.loc[:, is_non_const_col]
+        X = X.replace([np.inf, -np.inf], np.nan)
+        X = X.fillna(0.0)
+
+       
 
         causality_from = pd.DataFrame(
             index=[0], columns=calc_metrics).fillna(False)
@@ -489,40 +506,47 @@ class Causal(StreamData):
         vd_from = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
         vd_to = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
 
-        # if is_non_const_col.loc[data.metric]:
-        #     causality = Causality()
-        #     causality.adaptive_progresive_var_fit(
-        #         X, latency_limit_in_msec=100, point_choice_method="reverse")
+        print(X)
 
-        #     causality_from.loc[0, is_non_const_col], causality_to.loc[
-        #         0, is_non_const_col] = causality.check_causality(data.metric, signif=0.1)
+        if is_non_const_col.loc[data.metric]:
+            causality = Causality()
+            causality.adaptive_progresive_var_fit(
+                X, latency_limit_in_msec=100, point_choice_method="reverse")
 
-        #     try:
-        #         tmp_ir_from, tmp_ir_to = causality.impulse_response(
-        #             self.metric)
-        #         ir_from.loc[0, is_non_const_col] = tmp_ir_from[:, 1]
-        #         ir_to.loc[0, is_non_const_col] = tmp_ir_to[:, 1]
-        #     except:
-        #         print(
-        #             "impulse reseponse was not excuted. probably matrix is not",
-        #             "positive definite")
+            print(causality.check_causality(data.metric, signif=0.1))
 
-        #     try:
-        #         tmp_vd_from, tmp_vd_to = causality.variance_decomp(self.metric)
-        #         vd_from.loc[0, is_non_const_col] = tmp_vd_from[:, 1]
-        #         vd_to.loc[0, is_non_const_col] = tmp_vd_to[:, 1]
-        #     except:
-        #         print(
-        #             "impulse reseponse was not excuted. probably matrix is not",
-        #              "positive definite")
+            causality_from, causality_to = causality.check_causality(data.metric, signif=0.1)
 
-        causality_from = causality_from.loc[0, :].tolist()
-        causality_to = causality_to.loc[0, :].tolist()
+
+            try:
+                tmp_ir_from, tmp_ir_to = causality.impulse_response(
+                    self.metric)
+                ir_from.loc[0, is_non_const_col] = tmp_ir_from[:, 1]
+                ir_to.loc[0, is_non_const_col] = tmp_ir_to[:, 1]
+            except:
+                print(
+                    "impulse reseponse was not excuted. probably matrix is not",
+                    "positive definite")
+
+            try:
+                tmp_vd_from, tmp_vd_to = causality.variance_decomp(self.metric)
+                vd_from.loc[0, is_non_const_col] = tmp_vd_from[:, 1]
+                vd_to.loc[0, is_non_const_col] = tmp_vd_to[:, 1]
+            except:
+                print(
+                    "impulse reseponse was not excuted. probably matrix is not",
+                     "positive definite")
+
+        causality_from = causality_from
+        causality_to = causality_to
         ir_from = ir_from.loc[0, :].tolist()
         ir_to = ir_to.loc[0, :].tolist()
         vd_from = vd_from.loc[0, :].tolist()
         vd_to = vd_to.loc[0, :].tolist()
 
+        print(ir_from, ir_to)
+
+        
         from_ = [(calc_metrics, self.numpybool_to_bool(causality_from),
                   ir_from, vd_from)]
         to_ = [(calc_metrics, self.numpybool_to_bool(causality_to), ir_to,
@@ -536,5 +560,7 @@ class Causal(StreamData):
         to_result = pd.DataFrame(
             data=to_,
             columns=['to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'])
+
+        print(from_result, to_result)
 
         return [from_result, to_result]

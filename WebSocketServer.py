@@ -58,6 +58,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         self.stream_count = 0
         self.stream_objs = {}
         self.max_stream_count = 20
+        self.update = 1
         WebSocketHandler.waiters.add(self)
 
     def process(self, stream):  
@@ -76,7 +77,10 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 ret['data'] = stream_obj.comm_data()
             else:
                 stream_obj = self.stream_objs[metric]
-                self.stream_data = stream_obj.update(stream)
+                if(self.update == 1):
+                    self.stream_data = stream_obj.update(stream)
+                else:
+                    self.stream_data = stream_obj.deupdate(stream)
                 ret[metric] = stream_obj.run_methods(self.stream_data, self.algo)
                 ret['data'] = stream_obj.comm_data()
         return ret 
@@ -124,6 +128,9 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
         if('stream_count' in req):
             self.stream_count = req['stream_count']
+
+        if('update' in req):
+            self.update = req['update']
 
         if(self.method == 'stream'):
             rd = RossData([self.data_attribute])

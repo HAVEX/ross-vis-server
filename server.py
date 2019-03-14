@@ -19,6 +19,7 @@ from ross_vis.DataModel import RossData
 from ross_vis.DataCache import RossDataCache
 from ross_vis.Transform import flatten, flatten_list
 from ross_vis.Analytics import Analytics
+from ross_vis.ProgAnalytics import StreamData
 
 from WebSocketServer import WebSocketHandler
 
@@ -137,8 +138,51 @@ def main():
         print("Watching {0} ({1}) for changes".format(key, path))
         for dir, _, files in os.walk(path):
             [tornado.autoreload.watch(path + '/' + f) for f in files if not f.startswith('.')]
-        
+    
+    stream_objs = {}
+    def process(stream, stream_count):
+        metric = ['RbSec']
+        granularity = 'KpGid'
+        time_domain = 'LastGvt'
+        algo = {
+            'cpd': 'aff',
+            'pca': 'prog_inc',
+            'causality': 'var',
+            'clustering': 'evostream',
+        }  
+        ret = {}                  
+        for idx, metric in enumerate(metric):
+            print('Calculating results for {0}'.format(metric))
+            if stream_count == 0: 
+                stream_data = StreamData(stream, granularity, metric, time_domain)
+                stream_objs[metric] = stream_data
+                ret[metric] = stream_data.format()
+                ret['data'] = [{}, {}]
+            elif stream_count < 2: 
+                stream_obj = stream_objs[metric]
+                stream_data = stream_obj.update(stream)
+                ret[metric] = stream_data.format()
+                ret['data'] = stream_obj.comm_data()
+            else:
+                stream_obj = stream_objs[metric]
+                stream_data = stream_obj.update(stream)
+                ret[metric] = stream_obj.run_methods(stream_data, algo)
+                ret['data'] = stream_obj.comm_data()
+        return ret 
+
+    data_attribute = 'KpData'
+    max_stream_count = 100
+    for stream_count in range(0, max_stream_count):
+        rd = RossData([data_attribute])
+        sample = WebSocketHandler.cache.data[stream_count]
+        stream = flatten(rd.fetch(sample))
+        res = process(stream, stream_count)
+
+    
+
+
     tornado.ioloop.IOLoop.current().start()    
+
 
 if __name__ == "__main__":
     main()

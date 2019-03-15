@@ -24,6 +24,7 @@ import os
 
 PROGRESSIVE_MODE = False
 
+print(os.environ['PYTHONPATH'])
 if 'PYTHONPATH' in os.environ and 'hpc-vast' in os.environ['PYTHONPATH']:
     from WebSocketProgServer import WebSocketHandler
     PROGRESSIVE_MODE = True
@@ -125,9 +126,12 @@ def main():
 
     if (os.path.isfile(options.datafile)):
         WebSocketHandler.cache.loadfile(options.datafile)
-        WebSocketHandler.KpData = WebSocketHandler.cache.export_dict('KpData')
-        print('[Post-Hoc mode] Loaded %d samples' % WebSocketHandler.cache.size())
 
+        if( PROGRESSIVE_MODE == False):
+            WebSocketHandler.KpData = WebSocketHandler.cache.export_dict('KpData')
+            print('[Post-Hoc mode] Loaded %d samples' % WebSocketHandler.cache.size())
+        else:
+            print('[Progressive mode] Loaded %d samples' % WebSocketHandler.cache.size())
 
     app = Application(options.appdir)
     app.listen(options.http)

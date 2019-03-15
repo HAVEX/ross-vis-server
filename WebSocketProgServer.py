@@ -99,7 +99,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         self.stream_objs = {}
         self.max_stream_count = 20
         self.update = 1
-        WebSocketProgHandler.waiters.add(self)
+        WebSocketHandler.waiters.add(self)
 
     def process(self, stream):  
         ret = {}                  
@@ -174,7 +174,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
         if(self.method == 'stream'):
             rd = RossData([self.data_attribute])
-            sample = WebSocketProgHandler.cache.data[self.stream_count]
+            sample = WebSocketHandler.cache.data[self.stream_count]
             stream = flatten(rd.fetch(sample))
             res = self.process(stream)
             msg = {}
@@ -212,12 +212,12 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
         if(self.method == 'stream-next'):
             rd = RossData([self.data_attribute])
-            sample = WebSocketProgHandler.cache.data.pop(0)
+            sample = WebSocketHandler.cache.data.pop(0)
             msg = {'data': flatten(rd.fetch(sample))}
             self.write_message(msg)
 
         if(self.method == 'get'):
-            data = WebSocketProgHandler.cache.export_dict(self.data_attribute)
+            data = WebSocketHandler.cache.export_dict(self.data_attribute)
             print(type(data))
             schema = {k:type(v).__name__ for k,v in data[0].items()}
             self.write_message({
@@ -226,13 +226,13 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             })
             
             msg = {'data': data, 'schema': schema}
-            if(WebSocketProgHandler.params != None):
+            if(WebSocketHandler.params != None):
                 msg['params'] = self.params
             self.write_message(msg)
 
 
         if(self.method == 'get-count'):
-            data = WebSocketProgHandler.cache.export_dict_count(self.data_attribute, self.stream_count)
+            data = WebSocketHandler.cache.export_dict_count(self.data_attribute, self.stream_count)
             schema = {k: type(v).__name__ for k, v in data[0].items()}
             self.write_message({
                 'data': data,
@@ -240,13 +240,13 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             })
 
         if(self.method == 'set'):
-            WebSocketProgHandler.params = req['params']
+            WebSocketHandler.params = req['params']
             self.write_message({'status': 'ok'})
-            print(WebSocketProgHandler.params)
+            print(WebSocketHandler.params)
 
     def on_close(self):
         print('connection closed')
-        WebSocketProgHandler.waiters.remove(self)
+        WebSocketHandler.waiters.remove(self)
 
     def check_origin(self, origin):
         return True

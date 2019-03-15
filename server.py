@@ -22,11 +22,14 @@ from ross_vis.Analytics import Analytics
 from ross_vis.ProgAnalytics import StreamData
 
 from WebSocketServer import WebSocketHandler
+from WebSocketProgServer import WebSocketProgHandler
 
 define("http", default=8888, help="run on the given port", type=int)
 define("stream", default=8000, help="streaming on the given port", type=int)
 define("appdir", default="../app/dist", help="serving app in given directory", type=str)
 define("datafile", default='', help="load data from file", type=str)
+define("algo", default="client", help="trigger to calculate the progressive results (server/client)", type=str)
+define("progressive", default=False, help="Progressive analytics version", type=bool)
 
 warnings.filterwarnings('ignore')
 
@@ -37,7 +40,8 @@ class Application(tornado.web.Application):
             (r'/app/(.*)', tornado.web.StaticFileHandler, {'path': appdir}),
             (r"/data", AjaxGetJsonData),
             (r"/analysis/(\w+)/(\w+)", AnalysisHandler),
-            (r"/websocket", WebSocketHandler)
+            (r"/websocket", WebSocketHandler), 
+            (r"/websocketProg", WebSocketProgHandler)
         ]
         settings = dict(
             cookie_secret="'a6u^=-sr5ph027bg576b3rl@#^ho5p1ilm!q50h0syyiw#zjxwxy0&gq2j*(ofew0zg03c3cyfvo'",
@@ -67,7 +71,11 @@ class StreamServer(TCPServer):
                     logging.info('received and processed %d bytes', size)
                 else:
                     print(size, len(data))
-                WebSocketHandler.cache.push(data)
+
+                if (options.progressive):
+                    WebSocketProgHandler.cache.push(data)
+                else:
+                    WebSocketHandler.cache.push(data)
 
             except StreamClosedError:
                 logging.info('stream connection closed')
@@ -95,6 +103,7 @@ class AnalysisHandler(tornado.web.RequestHandler):
     def get(self, granularity, reduction):
         metrics = self.get_arguments('metrics')
         data = WebSocketHandler.cache.export_dict('KpData')
+      
         analysis = Analytics(data, excludes=['CommData'], index=['Peid', 'Kpid', 'RealTs', 'LastGvt', 'VirtualTs', 'KpGid', 'EventId'])
         if granularity == 'PE':
             analysis.groupby(['Peid'])
@@ -113,9 +122,14 @@ def main():
     tornado.options.parse_command_line()
 
     if (os.path.isfile(options.datafile)):
-        WebSocketHandler.cache.loadfile(options.datafile)
-       # WebSocketHandler.KpData = WebSocketHandler.cache.export_dict('KpData')
-        print('Test mode: loaded %d samples' % WebSocketHandler.cache.size())
+        if(options.progressive):
+            WebSocketProgHandler.cache.loadfile(options.datafile)
+            print('[Progressive mode] Loaded %d samples' % WebSocketProgHandler.cache.size())
+        else:
+            WebSocketHandler.cache.loadfile(options.datafile)
+            WebSocketHandler.KpData = WebSocketHandler.cache.export_dict('KpData')
+            print('[Post-Hoc mode] Loaded %d samples' % WebSocketHandler.cache.size())
+
 
     app = Application(options.appdir)
     app.listen(options.http)
@@ -139,47 +153,9 @@ def main():
         for dir, _, files in os.walk(path):
             [tornado.autoreload.watch(path + '/' + f) for f in files if not f.startswith('.')]
     
-    stream_objs = {}
-    def process(stream, stream_count):
-        metric = ['RbSec']
-        granularity = 'KpGid'
-        time_domain = 'LastGvt'
-        algo = {
-            'cpd': 'aff',
-            'pca': 'prog_inc',
-            'causality': 'var',
-            'clustering': 'evostream',
-        }  
-        ret = {}                  
-        for idx, metric in enumerate(metric):
-            print('Calculating results for {0}'.format(metric))
-            if stream_count == 0: 
-                stream_data = StreamData(stream, granularity, metric, time_domain)
-                stream_objs[metric] = stream_data
-                ret[metric] = stream_data.format()
-                ret['data'] = [{}, {}]
-            elif stream_count < 2: 
-                stream_obj = stream_objs[metric]
-                stream_data = stream_obj.update(stream)
-                ret[metric] = stream_data.format()
-                ret['data'] = stream_obj.comm_data()
-            else:
-                stream_obj = stream_objs[metric]
-                stream_data = stream_obj.update(stream)
-                ret[metric] = stream_obj.run_methods(stream_data, algo)
-                ret['data'] = stream_obj.comm_data()
-        return ret 
-
-    data_attribute = 'KpData'
-    max_stream_count = 100
-    for stream_count in range(0, max_stream_count):
-        rd = RossData([data_attribute])
-        sample = WebSocketHandler.cache.data[stream_count]
-        stream = flatten(rd.fetch(sample))
-        res = process(stream, stream_count)
-
-    
-
+    # For running progressive in the server without sockets
+    if(options.progressive == True and options.algo == 'server'):
+        WebSocketProgHandler.runOnServer()
 
     tornado.ioloop.IOLoop.current().start()    
 

@@ -18,6 +18,9 @@ from ross_vis.prog_evo_stream import ProgEvoStream
 # Causality methods
 from ross_vis.causality import Causality
 
+#from timer import Timer
+
+
 class PCAAFFCPD(pca_aff_cpd_cpp.PCAAFFCPD):
     def __init__(self,
                  alpha,
@@ -71,6 +74,8 @@ class StreamData:
         self.results = pd.DataFrame(data=self.df[granularity].astype(np.float64).tolist(), columns=[granularity])
         self._time = self.metric_df.columns.get_level_values(1).tolist()
         self.granIDs = self.df[self.granularity]
+        #self.timer = Timer()
+
 
     def _format(self):
         # Convert metric_df to ts : { id1: [timeSeries], id2: [timeSeries] }    
@@ -95,6 +100,7 @@ class StreamData:
             return 'int'
 
     def format(self):
+       #print(self.timer)
         schema = {k:self.process_type(type(v).__name__) for k,v in self.df.iloc[0].items()}
         return  (self.results.to_dict('records'), schema)
 
@@ -121,7 +127,7 @@ class StreamData:
 
     def processByMetric(self, df, metric):
         self.groupby(df, [self.granularity, self.time_domain])
-        table = pd.pivot_table(df, values=[metric], index=[self.granularity], columns=[self.time_domain])
+        table = pd.pivot_table(df, values=[metric], index=[self.granularity], columns=[self.time_domain], fill_value=0)
         column_names = []
         for name, group in self.groups:
             column_names.append(name[1])
@@ -166,7 +172,6 @@ class StreamData:
             self.drop_prev_results(['ids', 'normal', 'normal_clusters', 'normal_times','micro', 'micro_clusters', 'macro', 'macro_clusters', 'macro_times', 'micro_times'])
 
     def run_methods(self, data, algo):
-        start = time.time()
         self.clean_up()
         clustering_result = self.clustering.tick(data)
         pca_result = self.pca.tick(data, algo['pca'])
@@ -179,7 +184,6 @@ class StreamData:
             self.results = self.results.join(cpd_result)
             self.results = self.results.join(causal_result)
         self.results = self.results.fillna(0)   
-        print("Time to compute results", time.time() - start)
         #self.to_csv(self.count)
         return self.format()
 
@@ -454,30 +458,28 @@ class Causal(StreamData):
         self.metric = data.metric
         
         metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
-         'RbTime', 'RbTotal', 'VirtualTimeDiff', 'LastGvt', 'KpGid']
+         'RbTime', 'RbTotal', 'LastGvt', 'KpGid']
 
         calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventRb', 'NeventProcessed', \
-           'RbSec', 'RbTime', 'VirtualTimeDiff']
+           'RbSec']
 
         pca = ProgIncPCA(1)
         total_latency_for_pca = 100
         latency_for_each = int(total_latency_for_pca / len(metrics))
         n = 128
         X = np.empty(shape=(n, len(metrics)))
-        self.df = self.df[metrics]
+        self.df = self.df[metrics] 
 
-        for i, metric in enumerate(metrics):
-            start = time.time()
-            if metric != 'LastGvt' and  metric != 'KpGid':
-                metric_pd = data.processByMetric(self.df, metric)
-                if(metric not in self.pivot_table_results):
-                    self.pivot_table_results[metric] = metric_pd
-                else:
-                    self.pivot_table_results[metric] = pd.concat([self.pivot_table_results[metric], metric_pd])
-                    metric_nd = self.pivot_table_results[metric]
-                metric_nd = metric_pd.values
-            
         for i, metric in enumerate(calc_metrics):
+            start = time.time()
+            metric_pd = data.processByMetric(self.df, metric)
+            if(metric not in self.pivot_table_results):
+                self.pivot_table_results[metric] = metric_pd
+            else:
+                self.pivot_table_results[metric] = pd.concat([self.pivot_table_results[metric], metric_pd], axis=1)
+                metric_pd = self.pivot_table_results[metric]
+            metric_nd = metric_pd.values
+            
             pca.progressive_fit(
                     metric_nd,
                     latency_limit_in_msec=latency_for_each,
@@ -493,8 +495,6 @@ class Causal(StreamData):
         X = X.replace([np.inf, -np.inf], np.nan)
         X = X.fillna(0.0)
 
-       
-
         causality_from = pd.DataFrame(
             index=[0], columns=calc_metrics).fillna(False)
         causality_to = pd.DataFrame(
@@ -506,14 +506,10 @@ class Causal(StreamData):
         vd_from = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
         vd_to = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
 
-        print(X)
-
         if is_non_const_col.loc[data.metric]:
             causality = Causality()
             causality.adaptive_progresive_var_fit(
                 X, latency_limit_in_msec=100, point_choice_method="reverse")
-
-            print(causality.check_causality(data.metric, signif=0.1))
 
             causality_from, causality_to = causality.check_causality(data.metric, signif=0.1)
 
@@ -560,7 +556,5 @@ class Causal(StreamData):
         to_result = pd.DataFrame(
             data=to_,
             columns=['to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'])
-
-        print(from_result, to_result)
 
         return [from_result, to_result]

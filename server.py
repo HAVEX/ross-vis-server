@@ -124,13 +124,9 @@ def main():
     tornado.options.parse_command_line()
 
     if (os.path.isfile(options.datafile)):
-        if(PROGRESSIVE_MODE):
-            WebSocketProgHandler.cache.loadfile(options.datafile)
-            print('[Progressive mode] Loaded %d samples' % WebSocketProgHandler.cache.size())
-        else:
-            WebSocketHandler.cache.loadfile(options.datafile)
-            WebSocketHandler.KpData = WebSocketHandler.cache.export_dict('KpData')
-            print('[Post-Hoc mode] Loaded %d samples' % WebSocketHandler.cache.size())
+        WebSocketHandler.cache.loadfile(options.datafile)
+        WebSocketHandler.KpData = WebSocketHandler.cache.export_dict('KpData')
+        print('[Post-Hoc mode] Loaded %d samples' % WebSocketHandler.cache.size())
 
 
     app = Application(options.appdir)
@@ -157,7 +153,7 @@ def main():
     
     # For running progressive in the server without sockets
     if(PROGRESSIVE_MODE == True and options.algo == 'server'):
-        WebSocketProgHandler.runOnServer()
+        WebSocketHandler.runOnServer()
 
     tornado.ioloop.IOLoop.current().start()    
 

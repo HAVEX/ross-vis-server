@@ -19,17 +19,23 @@ from ross_vis.DataModel import RossData
 from ross_vis.DataCache import RossDataCache
 from ross_vis.Transform import flatten, flatten_list
 from ross_vis.Analytics import Analytics
-from ross_vis.ProgAnalytics import StreamData
 
-from WebSocketServer import WebSocketHandler
-from WebSocketProgServer import WebSocketProgHandler
+import os
+
+PROGRESSIVE_MODE = False
+
+if 'PYTHONPATH' in os.environ and 'hpc-vast' in os.environ['PYTHONPATH']:
+    from WebSocketProgServer import WebSocketHandler
+    PROGRESSIVE_MODE = True
+else:
+    from WebSocketServer import WebSocketHandler
+
 
 define("http", default=8888, help="run on the given port", type=int)
 define("stream", default=8000, help="streaming on the given port", type=int)
 define("appdir", default="../app/dist", help="serving app in given directory", type=str)
 define("datafile", default='', help="load data from file", type=str)
 define("algo", default="client", help="trigger to calculate the progressive results (server/client)", type=str)
-define("progressive", default=False, help="Progressive analytics version", type=bool)
 
 warnings.filterwarnings('ignore')
 
@@ -40,8 +46,7 @@ class Application(tornado.web.Application):
             (r'/app/(.*)', tornado.web.StaticFileHandler, {'path': appdir}),
             (r"/data", AjaxGetJsonData),
             (r"/analysis/(\w+)/(\w+)", AnalysisHandler),
-            (r"/websocket", WebSocketHandler), 
-            (r"/websocketProg", WebSocketProgHandler)
+            (r"/websocket", WebSocketHandler)
         ]
         settings = dict(
             cookie_secret="'a6u^=-sr5ph027bg576b3rl@#^ho5p1ilm!q50h0syyiw#zjxwxy0&gq2j*(ofew0zg03c3cyfvo'",
@@ -72,10 +77,7 @@ class StreamServer(TCPServer):
                 else:
                     print(size, len(data))
 
-                if (options.progressive):
-                    WebSocketProgHandler.cache.push(data)
-                else:
-                    WebSocketHandler.cache.push(data)
+                WebSocketHandler.cache.push(data)
 
             except StreamClosedError:
                 logging.info('stream connection closed')
@@ -122,7 +124,7 @@ def main():
     tornado.options.parse_command_line()
 
     if (os.path.isfile(options.datafile)):
-        if(options.progressive):
+        if(PROGRESSIVE_MODE):
             WebSocketProgHandler.cache.loadfile(options.datafile)
             print('[Progressive mode] Loaded %d samples' % WebSocketProgHandler.cache.size())
         else:
@@ -154,7 +156,7 @@ def main():
             [tornado.autoreload.watch(path + '/' + f) for f in files if not f.startswith('.')]
     
     # For running progressive in the server without sockets
-    if(options.progressive == True and options.algo == 'server'):
+    if(PROGRESSIVE_MODE == True and options.algo == 'server'):
         WebSocketProgHandler.runOnServer()
 
     tornado.ioloop.IOLoop.current().start()    

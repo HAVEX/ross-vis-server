@@ -36,7 +36,7 @@ stream_data = StreamData(stream, self.granularity, self.time_domain)
 func = partial(process, stream_data, self.data_count, self.algo, self.time_domain, self.granularity, stream)
 msg = pool.map(func, self.metric)
  """
-class WebSocketProgHandler(tornado.websocket.WebSocketHandler):
+class WebSocketHandler(tornado.websocket.WebSocketHandler):
     waiters = set()
     cache = RossDataCache()
     cache_size = 100

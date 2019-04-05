@@ -155,7 +155,6 @@ class StreamData:
         self.whole_data_df = pd.DataFrame(remove_data)
         this_time = self.whole_data_df[self.time_domain].unique()[0]
         self.df = self.df[self.df[self.time_domain] != this_time]
-        print(this_time, self.metric_df.columns)
         #self.metric_df.drop(columns=[this_time])
         self.count = self.count - 1
         self._time = this_time
@@ -261,7 +260,7 @@ class CPD(StreamData):
         change = self.aff_obj.feed_predict(Xt[0, :])
         if change:
             self.cps.append(0)
-            print('Change', 0)
+            print('#####################Change#######################', 0)
             return 1
         else:
             return 0
@@ -272,9 +271,10 @@ class CPD(StreamData):
         change = self.aff_obj.feed_predict(Xt[0, :])
         if(change):
             self.cps.append(self.count)
-            print('Change', self.count)
+            print('#####################Change#######################', self.count)
             return 1
         else:
+            print('#####################No-change#######################', self.count)
             return 0
 
 class PCA(StreamData):
@@ -304,7 +304,7 @@ class PCA(StreamData):
 
         if(self.count < 2):
             pass
-        elif(self.count >= 2):
+        elif(self.count == 2):
             if(method == 'prog_inc'):
                 self.prog_inc()
             elif(self.method == 'inc'):
@@ -320,23 +320,19 @@ class PCA(StreamData):
     def prog_inc(self):
         pca = ProgIncPCA(2, 1.0)
         self.time_series = self.metric_df.values
-        print('PCA', self.time_series.shape)
         pca.progressive_fit(self.time_series, 10, "random")
         self.pcs_curr = pca.transform(self.time_series) 
         pca.get_loadings()
 
     def prog_inc_update(self):
         new_time_series = self.new_data_df.values
-        print(new_time_series)
         self.time_series = np.append(self.time_series, new_time_series, 1)
-        print('PCA', self.time_series.shape)
         pca = ProgIncPCA(2, 1.0)
         pca.progressive_fit(self.time_series, latency_limit_in_msec = 10)
         self.pcs_new = pca.transform(self.time_series)
-        geom_trans_mat = pca.adaptive_progresive_geom_trans_2d(self.pcs_curr, self.pcs_new, latency_limit_in_msec = 10)
-        self.pcs_curr_bg = geom_trans_mat.dot(self.pcs_new.transpose()).transpose()
-        self.pcs_curr = self.pcs_curr_bg
-
+        geom_trans_mat = pca.adaptive_progresive_geom_trans_2d(self.pcs_curr, self.pcs_new, latency_limit_in_msec = 100)
+        self.pcs_curr = geom_trans_mat.dot(self.pcs_new.transpose()).transpose()
+        
     def inc(self):
         pca = IncPCA(2, 1.0)
         pca.partial_fit(self.data)
@@ -417,7 +413,6 @@ class Clustering(StreamData):
         self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec, point_choice_method="random", verbose=True)
         self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
         self.labels, self.current_to_prev = self.evo.consistent_labels(self.labels, self.evo.predict(self.time_series))
-        print(self.current_to_prev)
 
     def macro(self):
         self.time_series_macro = np.array(self.evo.get_macro_clusters())
@@ -539,8 +534,6 @@ class Causal(StreamData):
         ir_to = ir_to.loc[0, :].tolist()
         vd_from = vd_from.loc[0, :].tolist()
         vd_to = vd_to.loc[0, :].tolist()
-
-        print(ir_from, ir_to)
 
         
         from_ = [(calc_metrics, self.numpybool_to_bool(causality_from),

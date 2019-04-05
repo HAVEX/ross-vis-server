@@ -24,7 +24,6 @@ import os
 
 PROGRESSIVE_MODE = False
 
-print(os.environ['PYTHONPATH'])
 if 'PYTHONPATH' in os.environ and 'hpc-vast' in os.environ['PYTHONPATH']:
     from WebSocketProgServer import WebSocketHandler
     PROGRESSIVE_MODE = True

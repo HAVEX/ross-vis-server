@@ -194,7 +194,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     'time': d[1],
                     'schema': d[2],
                 }
-                
             self.write_message(msg)
 
         if(self.method == 'pre-calc'):

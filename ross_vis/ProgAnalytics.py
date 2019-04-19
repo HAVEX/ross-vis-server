@@ -14,6 +14,7 @@ from ross_vis.prog_inc_pca import ProgIncPCA
 
 # Clustering methods
 from ross_vis.prog_evo_stream import ProgEvoStream
+from ross_vis.prog_kmeans import ProgKMeans
 
 # Causality methods
 from ross_vis.causality import Causality
@@ -67,6 +68,9 @@ class StreamData:
         self.metric_df = self.preprocess(self.df)
         # set new_data_df for the first stream as metric_df
         self.whole_data_df = self.metric_df
+
+        self.algo_clustering = 'kmeans'
+
         self.cpd = CPD()
         self.pca = PCA()
         self.causal = Causal()
@@ -168,7 +172,10 @@ class StreamData:
                                    'to_metrics', 'to_causality', 'to_IR_1', 'to_VD_1'
             ])
             self.drop_prev_results(['PC0','PC1'])
-            self.drop_prev_results(['ids', 'normal', 'normal_clusters', 'normal_times','micro', 'micro_clusters', 'macro', 'macro_clusters', 'macro_times', 'micro_times'])
+            if(self.algo_clustering == 'evostream'):
+                self.drop_prev_results(['ids', 'normal', 'normal_clusters', 'normal_times','micro', 'micro_clusters', 'macro', 'macro_clusters', 'macro_times', 'micro_times'])
+            elif(self.algo_clustering == 'kmeans'):
+                self.drop_prev_results(['ids', 'normal', 'normal_clusters', 'normal_times', 'macro', 'macro_clusters', 'macro_times',])
 
     def run_methods(self, data, algo):
         self.clean_up()
@@ -330,8 +337,7 @@ class PCA(StreamData):
         pca = ProgIncPCA(2, 1.0)
         pca.progressive_fit(self.time_series, latency_limit_in_msec = 10)
         self.pcs_new = pca.transform(self.time_series)
-        geom_trans_mat = pca.adaptive_progresive_geom_trans_2d(self.pcs_curr, self.pcs_new, latency_limit_in_msec = 100)
-        self.pcs_curr = geom_trans_mat.dot(self.pcs_new.transpose()).transpose()
+        self.pcs_curr = ProgIncPCA.geom_trans(self.pcs_curr, self.pcs_new)
         
     def inc(self):
         pca = IncPCA(2, 1.0)
@@ -356,15 +362,15 @@ class Clustering(StreamData):
         self.times_micro = np.array([])
 
 
-    def format(self):
-        normal_result = pd.DataFrame.from_dict({'normal' : np.asmatrix(self.time_series).tolist(), 'normal_labels': self.labels }, orient='index')
-        micro_result = pd.DataFrame.from_dict({'micro' : np.asmatrix(self.time_series_micro).tolist(), 'micro_labels': self.labels_micro }, orient='index')
-        macro_result = pd.DataFrame.from_dict({'macro' : np.asmatrix(self.time_series_macro).tolist(), 'macro_labels': self.labels_macro }, orient='index')
+    # def format(self):
+    #     normal_result = pd.DataFrame.from_dict({'normal' : np.asmatrix(self.time_series).tolist(), 'normal_labels': self.labels }, orient='index')
+    #     micro_result = pd.DataFrame.from_dict({'micro' : np.asmatrix(self.time_series_micro).tolist(), 'micro_labels': self.labels_micro }, orient='index')
+    #     macro_result = pd.DataFrame.from_dict({'macro' : np.asmatrix(self.time_series_macro).tolist(), 'macro_labels': self.labels_macro }, orient='index')
         
-        return({
-            'normal': normal_result,
-            'micro': micro_result,
-        })
+    #     return({
+    #         'normal': normal_result,
+    #         'micro': micro_result,
+    #     })
 
     def _format(self):
         normal = [(self.time_series.tolist(), self.labels, self._time, self.granIDs.tolist())]
@@ -374,24 +380,43 @@ class Clustering(StreamData):
         micro_result = pd.DataFrame(data=micro, columns=['micro', 'micro_clusters', 'micro_times'])
         macro_result = pd.DataFrame(data=macro, columns=['macro', 'macro_clusters', 'macro_times'])
         return [normal_result, micro_result, macro_result]
+        
+    def _kmeans_format(self):
+        normal = [(self.time_series.tolist(), self.labels, self._time, self.granIDs.tolist())]
+        macro = [(self.time_series_macro.tolist(), self.labels_macro, self._time)]
+        normal_result = pd.DataFrame(data=normal, columns=['normal', 'normal_clusters', 'normal_times', 'ids'])
+        macro_result = pd.DataFrame(data=macro, columns=['macro', 'macro_clusters', 'macro_times'])
+        return [normal_result, macro_result]
 
     def tick(self, data):
         self.metric_df = data.metric_df
         self.new_data_df = data.new_data_df
+        self.algo = data.algo_clustering
         self._time = data._time
         self.granIDs = data.granIDs
         self.granularity = data.granularity
         self.count = data.count 
         
-        if(self.count < 2):
-            return {}
-        if(self.count == 2):
-            self.evostream()
-        elif(self.count > 2):
-            self.evostream_update()
-        self.macro()
-        self.micro()
-        return self._format()
+        if(self.algo == 'evostream'):
+            if(self.count < 2):
+                return {}
+            if(self.count == 2):
+                self.evostream()
+            elif(self.count > 2):
+                self.evostream_update()
+            self.macro()
+            self.micro()
+            return self._format()
+        elif(self.algo == 'kmeans'):
+            if(self.count < 2):
+                return {}
+            if(self.count == 2):
+                self.kmeans()
+            elif(self.count > 2):
+                self.kmeans_update()
+            self.kmeans_macro()
+            # self.micro()
+            return self._kmeans_format()
 
     def emptyCurrentToPrev(self):
         ret = {}
@@ -424,6 +449,36 @@ class Clustering(StreamData):
         self.lables_micro = self.evo.predict(self.time_series_micro)
         self.labels_micro = [self.current_to_prev[i] for i in self.labels_micro]
         self.times_micro = np.array(self._time)
+
+    def kmeans(self):
+        self.time_series = self.metric_df.values
+        self.evo = ProgKMeans(n_clusters=self.n_clusters)
+        self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec)
+        # self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
+        self.labels = self.evo.predict(self.time_series).tolist()
+        print(self.labels)
+        self.current_to_prev = self.emptyCurrentToPrev()
+        
+    def kmeans_update(self):
+        new_time_series = self.new_data_df.values
+        self.time_series = np.append(self.time_series, new_time_series, 1)
+        self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec, point_choice_method="fromPrevCluster", verbose=True)
+        # self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
+        self.labels, self.current_to_prev = self.evo.consistent_labels(self.labels, self.evo.predict(self.time_series))
+        print(self.labels)
+
+    def kmeans_macro(self):
+        self.time_series_macro = np.array(self.evo.get_centers())
+        self.labels_macro = [self.current_to_prev[i] for i in range(self.time_series_macro.shape[0])]
+        self.times_macro = np.array(self._time)
+
+    # def micro(self):
+    #     self.time_series_micro = np.array(self.evo.get_micro_clusters())
+    #     self.lables_micro = self.evo.predict(self.time_series_micro)
+    #     self.labels_micro = [self.current_to_prev[i] for i in self.labels_micro]
+    #     self.times_micro = np.array(self._time)
+
+
 
 class Causal(StreamData):
     def __init__(self):

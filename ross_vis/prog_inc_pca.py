@@ -78,11 +78,10 @@ class ProgIncPCA(prog_inc_pca_cpp.ProgIncPCA):
     ...         lw=lw,
     ...         label=target_name)
     >>> plt.legend(loc='best', shadow=False, scatterpoints=1)
-    >>> plt.title('After adding new feature (without geom_trans_2d)')
+    >>> plt.title('After adding new feature (without geom_trans)')
 
     >>> # apply the progressive geometric transformation
-    >>> geom_trans_mat = pca.adaptive_progresive_geom_trans_2d(Y_a, Y_b, latency_limit_in_msec=10)
-    >>> Y_bg = geom_trans_mat.dot(Y_b.transpose()).transpose()
+    >>> Y_bg = ProgIncPCA.geom_trans(Y_a, Y_b)
 
     >>> plt.figure()
     >>> for color, i, target_name in zip(colors, [0, 1, 2], target_names):
@@ -93,7 +92,7 @@ class ProgIncPCA(prog_inc_pca_cpp.ProgIncPCA):
     ...         alpha=.8,
     ...         label=target_name)
     >>> plt.legend(loc='best', shadow=False, scatterpoints=1)
-    >>> plt.title('After adding new feature (with geom_trans_2d)')
+    >>> plt.title('After adding new feature (with geom_trans)')
     >>> plt.show()
     Notes
     -----
@@ -210,73 +209,24 @@ class ProgIncPCA(prog_inc_pca_cpp.ProgIncPCA):
         return super().get_loadings()
 
     @classmethod
-    def geom_trans_2d(cls, Y1, Y2):
+    def geom_trans(cls, Y1, Y2):
         """Finding the geometric transformation matrix, which maximizes the
         Y2's overlap to Y1  with a combination of uniform scaling, rotation,
         and sign flipping.
 
         Parameters
         ----------
-        Y1 : array-like, shape (n_samples, 2)
-            Data point positions (2D). Y1 is used as a base of ovarlapping.
-        Y2 : array-like, shape (n_samples, 2)
-            Data point positions (2D). geom_trans_2d finds a matrix to optimally
+        Y1 : array-like, shape (n_samples, n_dimensions)
+            Data point positions (n_dimensions). Y1 is used as a base of ovarlapping.
+        Y2 : array-like, shape (n_samples, n_dimensions)
+            Data point positions (n_dimensions). geom_trans finds a matrix to optimally
             overlap Y2 to Y1.
         Returns
         -------
-        M : array-like, shape (2, 2)
-            Returns the geometric transformation matrix, M. M is equal to
-            alpha * R(psi) * F(delta) in [Fujiwara et al., xxxx].
+        Y2_g: array-like, shape (n_samples, n_dimensions)
+            Y2 after applied the geometric transformation.
         """
-        return super().geom_trans_2d(Y1, Y2)
-
-    def adaptive_progresive_geom_trans_2d(self,
-                                          Y1,
-                                          Y2,
-                                          latency_limit_in_msec=1000,
-                                          point_choice_method="random",
-                                          verbose=False):
-        """Finding the geometric transformation matrix, which maximizes the
-        Y2's overlap to Y1 with a combination of uniform scaling, rotation,
-        and sign flipping. This version applies geom_trans_2d adaptively and
-        progressively within an indicated latency limit.
-
-        Parameters
-        ----------
-        Y1 : array-like, shape (n_samples, 2)
-            Data point positions (2D). Y1 is used as a base of ovarlapping.
-        Y2 : array-like, shape (n_samples, 2)
-            Data point positions (2D). geom_trans_2d finds a matrix to optimally
-            overlap Y2 to Y1.
-        latency_limit_in_msec: int, optional, (default=1000)
-            Latency limit for incremental fits. Once total duration time passed
-            this time, the incremental update will be stopped.
-        point_choice_method: string, optional, (default="fromPrevMicro")
-            Point selection method from all n_samples. Options are as below.
-            "random": randomly select one data point for each incremental
-                update.
-            "as_is": select one data point in the order of data points as it is
-                in X for each incremental update.
-        verbose: boolean, optional (default=False)
-            If True, print out how many data points are processsed during
-            progressive process.
-        Returns
-        -------
-        M : array-like, shape (2, 2)
-            Returns the geometric transformation matrix, M. M is equal to
-            alpha * R(psi) * F(delta) in [Fujiwara et al., xxxx].
-        Notes
-        ------
-        Since geomTrans2D cannot apply in an incremental way, to find a good
-        number of data points to be input geomTran2D, this finds such a number
-        of data points adaptively. This starts with a selected 10 points, and
-        then, based on its calculation time, increases a number of data points
-        and run geomTran2D with the new number of data points repeatedly.
-        This increase number of data points can be estimated easily because of
-        geomTran2D's time complexity is O(n).
-        """
-        return super().adaptive_progresive_geom_trans_2d(
-            Y1, Y2, latency_limit_in_msec, point_choice_method, verbose)
+        return super().geom_trans(Y1, Y2)
 
     def get_uncert_v(self, n_obtained_features):
         """Obtaining the uncertainty measure, V, introduced in

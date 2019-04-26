@@ -42,7 +42,6 @@ class PCAAFFCPD(pca_aff_cpd_cpp.PCAAFFCPD):
     def feed_predict(self, new_time_point):
         return super().feed_predict(new_time_point)
 
-
 class PCAStreamCPD(pca_stream_cpd_cpp.PCAStreamCPD):
     def __init__(self,
                  win_size,
@@ -64,10 +63,14 @@ class StreamData:
         self.time_domain = time_domain
         self.metric = metric
         self.df = pd.DataFrame(data)
+        self.incoming_df = self.df
         self.new_data_df = self.df
         self.metric_df = self.preprocess(self.df)
         # set new_data_df for the first stream as metric_df
         self.whole_data_df = self.metric_df
+        
+        self.metrics_to_compute = ['CommData', 'RbTotal', 'RbSec', 'Kpid', 'Peid', 'LastGvt']
+        self.metric_to_clusterby = 'RbSec'
 
         self.algo_clustering = 'kmeans'
 
@@ -104,16 +107,27 @@ class StreamData:
             return 'int'
 
     def format(self):
-       #print(self.timer)
         schema = {k:self.process_type(type(v).__name__) for k,v in self.df.iloc[0].items()}
         return  (self.results.to_dict('records'), schema)
 
+    def kp_matrix(self):
+        ret = np.zeros([self.incoming_df.shape[0], self.incoming_df.shape[0]])
+        for idx, row in self.incoming_df.iterrows():
+            ret[idx] = row['CommData']
+        return ret
+    
     def comm_data(self):
-        columns = ['CommData', 'RbTotal', 'RbSec', 'Kpid', 'Peid', 'LastGvt']
-        _df = self.df[columns]
+        _df = self.df[self.metrics_to_compute]
+        _incoming_df = self.incoming_df[self.metrics_to_compute]
         _time = self.df[self.time_domain].unique()[self.count]
+        # _kpmatrix = self.kp_matrix()
         _schema = {k:self.process_type(type(v).__name__) for k,v in _df.iloc[0].items()}
-        return (_df.to_dict('records'), _time, _schema)
+        return {
+            "df": _df.to_dict('records'),
+            "incoming_df": _incoming_df.to_dict('records'),
+            "time": _time, 
+            "schema": _schema
+        }
 
     def groupby(self, df, keys, metric = 'mean'):
         # Groups data by the keys provided
@@ -456,7 +470,6 @@ class Clustering(StreamData):
         self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec)
         # self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
         self.labels = self.evo.predict(self.time_series).tolist()
-        print(self.labels)
         self.current_to_prev = self.emptyCurrentToPrev()
         
     def kmeans_update(self):
@@ -465,7 +478,6 @@ class Clustering(StreamData):
         self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec, point_choice_method="fromPrevCluster", verbose=True)
         # self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
         self.labels, self.current_to_prev = self.evo.consistent_labels(self.labels, self.evo.predict(self.time_series))
-        print(self.labels)
 
     def kmeans_macro(self):
         self.time_series_macro = np.array(self.evo.get_centers())
@@ -477,8 +489,6 @@ class Clustering(StreamData):
     #     self.lables_micro = self.evo.predict(self.time_series_micro)
     #     self.labels_micro = [self.current_to_prev[i] for i in self.labels_micro]
     #     self.times_micro = np.array(self._time)
-
-
 
 class Causal(StreamData):
     def __init__(self):

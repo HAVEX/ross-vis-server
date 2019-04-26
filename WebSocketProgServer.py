@@ -2,6 +2,7 @@ import urllib
 import json
 import tornado.websocket
 import time
+import base64
 
 from ross_vis.DataModel import RossData
 from ross_vis.DataCache import RossDataCache
@@ -187,13 +188,9 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     'result': r[0],
                     'schema': r[1]
                 }
-            d = res.get('data')
+
             if(self.stream_count > 0):
-                msg['comm'] = {
-                    'data': d[0],
-                    'time': d[1],
-                    'schema': d[2],
-                }
+                msg['comm'] = res.get('data')
             self.write_message(msg)
 
         if(self.method == 'pre-calc'):
@@ -217,7 +214,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
         if(self.method == 'get'):
             data = WebSocketHandler.cache.export_dict(self.data_attribute)
-            print(type(data))
             schema = {k:type(v).__name__ for k,v in data[0].items()}
             self.write_message({
                 'data': data,

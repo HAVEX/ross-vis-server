@@ -69,7 +69,7 @@ class StreamData:
         # set new_data_df for the first stream as metric_df
         self.whole_data_df = self.metric_df
         
-        self.metrics_to_compute = ['CommData', 'RbTotal', 'RbSec', 'Kpid', 'Peid', 'LastGvt']
+        self.communication_metrics = ['CommData', 'RbTotal', 'RbSec', 'Peid', 'LastGvt']
         self.metric_to_clusterby = 'RbSec'
 
         self.algo_clustering = 'kmeans'
@@ -117,8 +117,8 @@ class StreamData:
         return ret
     
     def comm_data(self):
-        _df = self.df[self.metrics_to_compute]
-        _incoming_df = self.incoming_df[self.metrics_to_compute]
+        _df = self.df[self.communication_metrics]
+        _incoming_df = self.incoming_df[self.communication_metrics]
         _time = self.df[self.time_domain].unique()[self.count]
         # _kpmatrix = self.kp_matrix()
         _schema = {k:self.process_type(type(v).__name__) for k,v in _df.iloc[0].items()}
@@ -157,6 +157,7 @@ class StreamData:
 
     def update(self, new_data):
         self.whole_data_df = pd.DataFrame(new_data)
+        self.incoming_df = self.whole_data_df
         self.df = pd.concat([self.df, self.whole_data_df]) 
         self.new_data_df = self.preprocess(self.whole_data_df)
         # To avoid Nan values while concat
@@ -515,10 +516,14 @@ class Causal(StreamData):
 
     def tick(self, data, method):
         self.df = data.whole_data_df
+        self.incoming_df = data.incoming_df
         self.metric = data.metric
+        self.granularity = data.granularity
         
         metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
-         'RbTime', 'RbTotal', 'LastGvt', 'KpGid']
+         'RbTime', 'RbTotal', 'LastGvt']
+
+        metrics.append(self.granularity)
 
         calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventRb', 'NeventProcessed', \
            'RbSec']
@@ -526,7 +531,7 @@ class Causal(StreamData):
         pca = ProgIncPCA(1)
         total_latency_for_pca = 100
         latency_for_each = int(total_latency_for_pca / len(metrics))
-        n = 128
+        n = self.incoming_df.shape[0]
         X = np.empty(shape=(n, len(metrics)))
         self.df = self.df[metrics] 
 

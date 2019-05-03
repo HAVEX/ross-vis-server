@@ -610,6 +610,8 @@ class Causal(StreamData):
                   ir_from, vd_from)]
         to_ = [(calc_metrics, self.numpybool_to_bool(causality_to), ir_to,
                 vd_to)]
+            
+        print(from_, to_)
 
         from_result = pd.DataFrame(
             data=from_,

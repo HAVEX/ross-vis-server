@@ -24,8 +24,6 @@ class RossDataCache:
         
         return flatten(results)
 
-    
-
     def loadfile(self, filename):
         with open(filename, "rb") as binary_file:
             # Read the whole file at once

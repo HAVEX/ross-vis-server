@@ -69,7 +69,8 @@ class StreamData:
         # set new_data_df for the first stream as metric_df
         self.whole_data_df = self.metric_df
         
-        self.communication_metrics = ['CommData', 'RbTotal', 'RbSec', 'Peid', 'LastGvt']
+        self.communication_metrics = ['CommData', 'RbTotal', 'RbSec', 'LastGvt']
+        self.communication_metrics.append(self.granularity)
         self.metric_to_clusterby = 'RbSec'
 
         self.algo_clustering = 'kmeans'
@@ -119,15 +120,37 @@ class StreamData:
     def comm_data(self):
         _df = self.df[self.communication_metrics]
         _incoming_df = self.incoming_df[self.communication_metrics]
-        _time = self.df[self.time_domain].unique()[self.count]
+        # _time = self.df[self.time_domain].unique()[self.count]
         # _kpmatrix = self.kp_matrix()
-        _schema = {k:self.process_type(type(v).__name__) for k,v in _df.iloc[0].items()}
+        _schema = {k:self.process_type(type(v).__name__) for k,v in _incoming_df.iloc[0].items()}
         return {
-            "df": _df.to_dict('records'),
             "incoming_df": _incoming_df.to_dict('records'),
-            "time": _time, 
+            # "time": _time, 
             "schema": _schema
         }
+
+    def comm_data_interval(self, interval):
+        df = self.df[self.communication_metrics]
+        filter_df = df.loc[df['LastGvt'].between(interval[0], interval[1]) == True]
+        group_df = filter_df.groupby([self.granularity])
+        unique_ids = filter_df[self.granularity].unique()
+        incoming_df = pd.DataFrame()
+        incoming_data = []
+        for key, item in group_df:
+            key_df = group_df.get_group(key)
+            idx_matrix = []
+            for idx, row in key_df.iterrows():
+                idx_matrix.append(row['CommData'])
+            idx_matrix_np = np.array(idx_matrix)
+            sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(unique_ids))
+            incoming_data.append(sum_idx_np.tolist())
+        incoming_df['CommData'] = incoming_data 
+        schema = {k:self.process_type(type(v).__name__) for k,v in incoming_df.iloc[0].items()}
+        return {
+            "incoming_df": incoming_df.to_dict('records'),
+            "schema": schema,
+        }
+
 
     def groupby(self, df, keys, metric = 'mean'):
         # Groups data by the keys provided
@@ -167,6 +190,7 @@ class StreamData:
         self.count = self.count + 1
         self._time = self.metric_df.columns.get_level_values(1).tolist()
         self.granIDs = self.df[self.granularity]
+
 
         return self     
 
@@ -611,8 +635,6 @@ class Causal(StreamData):
         to_ = [(calc_metrics, self.numpybool_to_bool(causality_to), ir_to,
                 vd_to)]
             
-        print(from_, to_)
-
         from_result = pd.DataFrame(
             data=from_,
             columns=[

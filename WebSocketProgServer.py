@@ -138,12 +138,11 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
     def on_message(self, message, binary=False):
         req = json.loads(message)
-        print(message)
 
         if('data' in req and req['data'] in ['PeData', 'KpData', 'LpData']):
             self.data_attribute = req['data']
 
-        if('method' in req and req['method'] in ['stream', 'get', 'set', 'get-count', 'pre-calc']):
+        if('method' in req and req['method'] in ['stream', 'get', 'set', 'get-count', 'pre-calc', 'comm-data-interval']):
             self.method = req['method']
         
         if('granularity' in req and req['granularity'] in ['Peid', 'KpGid', 'Lpid', 'Kpid']):
@@ -169,6 +168,9 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
         if('stream_count' in req):
             self.stream_count = req['stream_count']
+
+        if('interval' in req):
+            self.interval = req['interval']
 
         if('update' in req):
             self.update = req['update']
@@ -225,7 +227,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 msg['params'] = self.params
             self.write_message(msg)
 
-
         if(self.method == 'get-count'):
             data = WebSocketHandler.cache.export_dict_count(self.data_attribute, self.stream_count)
             schema = {k: type(v).__name__ for k, v in data[0].items()}
@@ -238,6 +239,12 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             WebSocketHandler.params = req['params']
             self.write_message({'status': 'ok'})
             print(WebSocketHandler.params)
+
+        if(self.method == 'comm-data-interval'):
+            ret = {}
+            ret['comm'] = self.stream_objs[self.metric[0]].comm_data_interval(self.interval)
+            print('found')
+            self.write_message(ret)
 
     def on_close(self):
         print('connection closed')

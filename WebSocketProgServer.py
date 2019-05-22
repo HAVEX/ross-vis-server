@@ -56,7 +56,8 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 'causality': 'var',
                 'clustering': 'evostream',
             }  
-            ret = {}                  
+            ret = {}          
+            print('a', metric)        
             for idx, metric in enumerate(metric):
                 print('Calculating results for {0}'.format(metric))
                 if stream_count == 0: 
@@ -169,9 +170,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if('stream_count' in req):
             self.stream_count = req['stream_count']
 
-        if('interval' in req):
-            self.interval = req['interval']
-
         if('update' in req):
             self.update = req['update']
 
@@ -241,9 +239,20 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             print(WebSocketHandler.params)
 
         if(self.method == 'comm-data-interval'):
+            if('interval' in req):
+                self.interval = req['interval']
             ret = {}
             ret['comm'] = self.stream_objs[self.metric[0]].comm_data_interval(self.interval)
-            print('found')
+            self.write_message(ret)
+
+        if(self.method == 'comm-data-interval-mode2'):
+            if('interval' in req):
+                self.interval = req['interval']
+            if('peid' in req):
+                self.peid = req['peid']
+
+            ret = {}
+            ret['comm'] = self.stream_objs[self.metric[0]].comm_data_interval(self.interval, self.peid)
             self.write_message(ret)
 
     def on_close(self):

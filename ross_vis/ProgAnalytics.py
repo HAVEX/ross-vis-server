@@ -63,13 +63,14 @@ class StreamData:
         self.time_domain = time_domain
         self.metric = metric
         self.df = pd.DataFrame(data)
+        self.df['RbPrim'] = self.df['RbTotal'] - self.df['RbSec']
         self.incoming_df = self.df
         self.new_data_df = self.df
         self.metric_df = self.preprocess(self.df)
         # set new_data_df for the first stream as metric_df
         self.whole_data_df = self.metric_df
         
-        self.communication_metrics = ['CommData', 'RbTotal', 'RbSec', 'LastGvt']
+        self.communication_metrics = ['CommData', 'RbTotal', 'RbSec', 'LastGvt', 'RbPrim']
         self.communication_metrics.append(self.granularity)
         self.metric_to_clusterby = 'RbSec'
 
@@ -151,6 +152,30 @@ class StreamData:
             "schema": schema,
         }
 
+    def comm_data_interval_mode2(self, interval, Peid):
+        self.communication_metrics.appned('Peid')
+        df = self.df[self.communication_metrics]
+        filter_df = df.loc[df['LastGvt'].between(interval[0], interval[1]) == True]
+        group_df = filter_df.groupby([self.granularity])
+        incoming_df = pd.DataFrame()
+        incoming_data = []
+        for key, item in group_df:
+            if(key == Peid):
+                key_df = group_df.get_group(key)
+                idx_matrix = []
+                for idx, row in key_df.iterrows():
+                    idx_matrix.append(row['CommData'])
+                idx_matrix_np = np.array(idx_matrix)
+                sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(key_df))
+                incoming_data.append(sum_idx_np.tolist())
+                print(len(key_df))
+        incoming_df['CommData'] = incoming_data 
+        schema = {k:self.process_type(type(v).__name__) for k,v in incoming_df.iloc[0].items()}
+        return {
+            "incoming_df": incoming_df.to_dict('records'),
+            "schema": schema,
+        }
+
 
     def groupby(self, df, keys, metric = 'mean'):
         # Groups data by the keys provided
@@ -180,6 +205,7 @@ class StreamData:
 
     def update(self, new_data):
         self.whole_data_df = pd.DataFrame(new_data)
+        self.whole_data_df['RbPrim'] = self.whole_data_df['RbTotal'] - self.whole_data_df['RbSec']   
         self.incoming_df = self.whole_data_df
         self.df = pd.concat([self.df, self.whole_data_df]) 
         self.new_data_df = self.preprocess(self.whole_data_df)
@@ -190,8 +216,6 @@ class StreamData:
         self.count = self.count + 1
         self._time = self.metric_df.columns.get_level_values(1).tolist()
         self.granIDs = self.df[self.granularity]
-
-
         return self     
 
     def deupdate(self, remove_data):
@@ -542,15 +566,17 @@ class Causal(StreamData):
         self.df = data.whole_data_df
         self.incoming_df = data.incoming_df
         self.metric = data.metric
+        self.time_domain = data.time_domain
         self.granularity = data.granularity
         
         metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
-         'RbTime', 'RbTotal', 'LastGvt']
+         'RbTime', 'RbTotal', 'RbPrim']
+
+        calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
+         'RbTime', 'RbTotal', 'RbPrim']
 
         metrics.append(self.granularity)
-
-        calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventRb', 'NeventProcessed', \
-           'RbSec']
+        metrics.append(self.time_domain)
 
         pca = ProgIncPCA(1)
         total_latency_for_pca = 100
@@ -595,13 +621,12 @@ class Causal(StreamData):
         vd_from = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
         vd_to = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
 
-        if is_non_const_col.loc[data.metric]:
+        if is_non_const_col.loc[self.metric]:
             causality = Causality()
             causality.adaptive_progresive_var_fit(
                 X, latency_limit_in_msec=100, point_choice_method="reverse")
 
             causality_from, causality_to = causality.check_causality(data.metric, signif=0.1)
-
 
             try:
                 tmp_ir_from, tmp_ir_to = causality.impulse_response(

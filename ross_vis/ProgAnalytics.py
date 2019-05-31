@@ -599,7 +599,7 @@ class Causal(StreamData):
                     metric_nd,
                     latency_limit_in_msec=latency_for_each,
                     point_choice_method='random',
-                    verbose=True)
+                    verbose=False)
             metric_1d = pca.transform(metric_nd)
             X[:, i] = metric_1d[:, 0]
 

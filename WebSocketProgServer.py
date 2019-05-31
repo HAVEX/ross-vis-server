@@ -171,8 +171,11 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
         if('update' in req):
             self.update = req['update']
+        
+        if('request' in req):
+            self.request = req['request']
 
-        if(self.method == 'stream'):
+        if(self.method == 'stream' and self.request == 0):
             rd = RossData([self.data_attribute])
             sample = WebSocketHandler.cache.data[self.stream_count]
             stream = flatten(rd.fetch(sample))
@@ -192,7 +195,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 msg['comm'] = res.get('data')
             self.write_message(msg)
 
-        if(self.method == 'pre-calc'):
+        if(self.method == 'pre-calc' and self.request == 0):
             res = self.pre_calc()
             msg = {}
             for idx, metric in enumerate(self.metric):
@@ -205,13 +208,13 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 }
             self.write_message(msg)
 
-        if(self.method == 'stream-next'):
+        if(self.method == 'stream-next' and self.request == 0):
             rd = RossData([self.data_attribute])
             sample = WebSocketHandler.cache.data.pop(0)
             msg = {'data': flatten(rd.fetch(sample))}
             self.write_message(msg)
 
-        if(self.method == 'get'):
+        if(self.method == 'get' and self.request == 0):
             data = WebSocketHandler.cache.export_dict(self.data_attribute)
             schema = {k:type(v).__name__ for k,v in data[0].items()}
             self.write_message({
@@ -224,7 +227,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 msg['params'] = self.params
             self.write_message(msg)
 
-        if(self.method == 'get-count'):
+        if(self.method == 'get-count' and self.request == 0):
             data = WebSocketHandler.cache.export_dict_count(self.data_attribute, self.stream_count)
             schema = {k: type(v).__name__ for k, v in data[0].items()}
             self.write_message({
@@ -232,19 +235,19 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 'schema': schema
             })
 
-        if(self.method == 'set'):
+        if(self.method == 'set' and self.request == 0):
             WebSocketHandler.params = req['params']
             self.write_message({'status': 'ok'})
             print(WebSocketHandler.params)
 
-        if(self.method == 'comm-data-interval'):
+        if(self.method == 'comm-data-interval' and self.request == 1):
             if('interval' in req):
                 self.interval = req['interval']
             ret = {}
             ret['comm'] = self.stream_objs[self.metric[0]].comm_data_interval(self.interval)
             self.write_message(ret)
 
-        if(self.method == 'comm-data-interval-mode2'):
+        if(self.method == 'comm-data-interval-mode2' and self.request == 1):
             if('interval' in req):
                 self.interval = req['interval']
             if('peid' in req):

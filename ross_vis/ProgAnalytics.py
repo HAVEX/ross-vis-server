@@ -132,7 +132,7 @@ class StreamData:
 
     def comm_data_interval(self, interval):
         df = self.df[self.communication_metrics]
-        filter_df = df.loc[df['LastGvt'].between(interval[0], interval[1]) == True]
+        filter_df = df.loc[df[self.time_domain].between(interval[0], interval[1]) == True]
         group_df = filter_df.groupby([self.granularity])
         unique_ids = filter_df[self.granularity].unique()
         incoming_df = pd.DataFrame()

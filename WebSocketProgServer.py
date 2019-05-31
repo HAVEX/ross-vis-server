@@ -57,7 +57,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 'clustering': 'evostream',
             }  
             ret = {}          
-            print('a', metric)        
             for idx, metric in enumerate(metric):
                 print('Calculating results for {0}'.format(metric))
                 if stream_count == 0: 

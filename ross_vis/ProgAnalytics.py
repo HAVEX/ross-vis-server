@@ -459,7 +459,9 @@ class Clustering(StreamData):
         self.granIDs = data.granIDs
         self.granularity = data.granularity
         self.count = data.count 
-        
+        # self.time_series = np.zeros((1, self.metric_df.shape[0]))
+
+        print(self.count)
         if(self.algo == 'evostream'):
             if(self.count < 2):
                 return {}
@@ -489,6 +491,7 @@ class Clustering(StreamData):
 
     def evostream(self):
         self.time_series = self.metric_df.values
+        print(self.time_series)
         self.evo = ProgEvoStream(n_clusters=self.n_clusters, mutation_rate=self.mutation_rate)
         self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec)
         self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)

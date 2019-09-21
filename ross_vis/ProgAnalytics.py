@@ -131,6 +131,8 @@ class StreamData:
         }
 
     def comm_data_interval(self, interval):
+        # self.granularity = 'KpGid'
+        # self.communication_metrics.append('KpGid')
         df = self.df[self.communication_metrics]
         filter_df = df.loc[df[self.time_domain].between(interval[0], interval[1]) == True]
         group_df = filter_df.groupby([self.granularity])
@@ -143,8 +145,10 @@ class StreamData:
             for idx, row in key_df.iterrows():
                 idx_matrix.append(row['CommData'])
             idx_matrix_np = np.array(idx_matrix)
-            sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(unique_ids))
+            sum_idx_np = idx_matrix_np.sum(axis = 0)
+            # sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(unique_ids))
             incoming_data.append(sum_idx_np.tolist())
+        print(incoming_data)
         incoming_df['CommData'] = incoming_data 
         schema = {k:self.process_type(type(v).__name__) for k,v in incoming_df.iloc[0].items()}
         return {
@@ -153,7 +157,7 @@ class StreamData:
         }
 
     def comm_data_interval_mode2(self, interval, Peid):
-        self.communication_metrics.appned('Peid')
+        self.communication_metrics.append('Peid')
         df = self.df[self.communication_metrics]
         filter_df = df.loc[df['LastGvt'].between(interval[0], interval[1]) == True]
         group_df = filter_df.groupby([self.granularity])
@@ -166,9 +170,10 @@ class StreamData:
                 for idx, row in key_df.iterrows():
                     idx_matrix.append(row['CommData'])
                 idx_matrix_np = np.array(idx_matrix)
+                print(idx_matrix_np)
                 sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(key_df))
+                print(sum_idx_np)
                 incoming_data.append(sum_idx_np.tolist())
-                print(len(key_df))
         incoming_df['CommData'] = incoming_data 
         schema = {k:self.process_type(type(v).__name__) for k,v in incoming_df.iloc[0].items()}
         return {
@@ -461,7 +466,6 @@ class Clustering(StreamData):
         self.count = data.count 
         # self.time_series = np.zeros((1, self.metric_df.shape[0]))
 
-        print(self.count)
         if(self.algo == 'evostream'):
             if(self.count < 2):
                 return {}
@@ -491,7 +495,6 @@ class Clustering(StreamData):
 
     def evostream(self):
         self.time_series = self.metric_df.values
-        print(self.time_series)
         self.evo = ProgEvoStream(n_clusters=self.n_clusters, mutation_rate=self.mutation_rate)
         self.evo.progressive_fit(self.time_series, latency_limit_in_msec=self.fit_latency_limit_in_msec)
         self.evo.progressive_refine_cluster(latency_limit_in_msec=self.refine_latency_limit_in_msec)
@@ -637,18 +640,20 @@ class Causal(StreamData):
                 ir_from.loc[0, is_non_const_col] = tmp_ir_from[:, 1]
                 ir_to.loc[0, is_non_const_col] = tmp_ir_to[:, 1]
             except:
-                print(
-                    "impulse reseponse was not excuted. probably matrix is not",
-                    "positive definite")
+                b = 1
+                # print(
+                    # "impulse reseponse was not excuted. probably matrix is not",
+                    # "positive definite")
 
             try:
                 tmp_vd_from, tmp_vd_to = causality.variance_decomp(self.metric)
                 vd_from.loc[0, is_non_const_col] = tmp_vd_from[:, 1]
                 vd_to.loc[0, is_non_const_col] = tmp_vd_to[:, 1]
             except:
-                print(
-                    "impulse reseponse was not excuted. probably matrix is not",
-                     "positive definite")
+                a = 1
+                # print(
+                    # "impulse reseponse was not excuted. probably matrix is not",
+                    #  "positive definite")
 
         causality_from = causality_from
         causality_to = causality_to

@@ -175,6 +175,11 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if('request' in req):
             self.request = req['request']
 
+        if('socket_request' in req):
+            self.socket_request = req['socket_request']
+        else:
+            self.socket_request = None
+
         if(self.method == 'stream' and self.request == 0):
             rd = RossData([self.data_attribute])
             sample = WebSocketHandler.cache.data[self.stream_count]
@@ -193,7 +198,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
             if(self.stream_count > 0):
                 msg['comm'] = res.get('data')
-            self.write_message(msg)
 
         if(self.method == 'pre-calc' and self.request == 0):
             res = self.pre_calc()
@@ -240,12 +244,12 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             self.write_message({'status': 'ok'})
             print(WebSocketHandler.params)
 
-        if(self.method == 'comm-data-interval' and self.request == 1):
+        if(self.socket_request == 'comm-data-interval'):
             if('interval' in req):
                 self.interval = req['interval']
-            ret = {}
-            ret['comm'] = self.stream_objs[self.metric[0]].comm_data_interval(self.interval)
-            self.write_message(ret)
+            print('==========================================================')
+            msg['aggr_comm'] = self.stream_objs[self.metric[0]].comm_data_interval(self.interval)
+            # self.write_message(ret)
 
         if(self.method == 'comm-data-interval-mode2' and self.request == 1):
             if('interval' in req):
@@ -256,6 +260,10 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             ret = {}
             ret['comm'] = self.stream_objs[self.metric[0]].comm_data_interval(self.interval, self.peid)
             self.write_message(ret)
+
+        print(msg.keys())
+        self.write_message(msg)
+
 
     def on_close(self):
         print('connection closed')

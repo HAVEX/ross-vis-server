@@ -133,7 +133,7 @@ class StreamData:
             "schema": _schema
         }
 
-    # def comm_data_interval(self, interval):
+ # def comm_data_interval(self, interval):
     #     # self.granularity = 'KpGid'
     #     # self.communication_metrics.append('KpGid')
     #     if(self.granularity == 'KpGid'):
@@ -172,30 +172,55 @@ class StreamData:
             self.communication_metrics.append('Peid')
             self.communication_metrics.append('Kpid')
 
+        # Drop columns we dont need.
         df = self.df[self.communication_metrics]
+        
+        # Filter between the time ranges
         filter_df = df.loc[df[self.time_domain].between(interval[0], interval[1]) == True]
+        
+        # Remove duplicated columns. Not sure why this happens.
+        filter_df = filter_df.loc[:,~filter_df.columns.duplicated()]
+
+        # Find number of Kps in the run.
+        pe_count = len(self.df['Peid'].unique())
+        kp_count = len(self.df['Kpid'].unique())
+        
+        # Group by the KpGid
+        # group_df = filter_df.groupby(['Peid', 'Kpid'])
         group_df = filter_df.groupby(['KpGid'])
         unique_ids = filter_df[self.granularity].unique()
-        incoming_df = self.incoming_df[self.communication_metrics]
-        incoming_data = np.zeros(shape=(128, 128))
+        
+        # Drop columns in the return df
+        ret_df = self.incoming_df[self.communication_metrics]
+        
+        # create the matrix we need to send. 
+        number_of_pes = pe_count*kp_count
+        comm_matrix_shape = (number_of_pes, number_of_pes)
+        comm_data = np.zeros(shape=comm_matrix_shape)
+        
+        # Loop through the communication at each sampled timepoint.
         for key, item in group_df:
             key_df = group_df.get_group(key)
-            idx_matrix = []
-            # print(key, key_df)
+            idx_matrix = np.zeros(shape=comm_matrix_shape)
+            
+            # Get index of this sample. 
+            peid = row['Peid']
+            kpid = row['Kpid']
+            index = peid*kp_count + kpid
+               
             for idx, row in key_df.iterrows():
-                idx_matrix.append(row['CommData'])
-            idx_matrix_np = np.array(idx_matrix)
-            print(idx_matrix_np)
-            sum_idx_np = idx_matrix_np.sum(axis = 0)
-            print(sum_idx_np.tolist())
+                idx_matrix[index] = append(row['CommData'])
+                          
+            # Sum the matrices we got. 
+            sum_idx_matrix = idx_matrix.sum(axis = 0)
             # sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(unique_ids))
-            index = int(row['Peid'].unique()[0])*16 + int(row['Kpid'].unique()[0])
-            print(row['Peid'].unique()[0], row['Kpid'].unique()[0], index)
-            incoming_data[index] = sum_idx_np.tolist()
-        incoming_df['AggrCommData'] = incoming_data.T.tolist()
-        schema = {k:self.process_type(type(v).__name__) for k,v in incoming_df.iloc[0].items()}
+            comm_data[index] = sum_idx_matrix
+
+        # Create a new column "AggrCommData" and send the results
+        ret_df['AggrCommData'] = comm_data.tolist()
+        schema = {k:self.process_type(type(v).__name__) for k,v in ret_df.iloc[0].items()}
         return {
-            "incoming_df": incoming_df.to_dict('records'),
+            "incoming_df": ret_df.to_dict('records'),
             "schema": schema,
         }
 

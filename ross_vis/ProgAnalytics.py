@@ -119,6 +119,9 @@ class StreamData:
         return ret
     
     def comm_data(self):
+        if(self.granularity == 'KpGid'):
+            self.communication_metrics.append('Peid')
+            self.communication_metrics.append('Kpid')
         _df = self.df[self.communication_metrics]
         _incoming_df = self.incoming_df[self.communication_metrics]
         # _time = self.df[self.time_domain].unique()[self.count]
@@ -130,34 +133,77 @@ class StreamData:
             "schema": _schema
         }
 
+    # def comm_data_interval(self, interval):
+    #     # self.granularity = 'KpGid'
+    #     # self.communication_metrics.append('KpGid')
+    #     if(self.granularity == 'KpGid'):
+    #         self.communication_metrics.append('Peid')
+    #         self.communication_metrics.append('Kpid')
+
+    #     df = self.df[self.communication_metrics]
+    #     filter_df = df.loc[df[self.time_domain].between(interval[0], interval[1]) == True]
+    #     group_df = filter_df.groupby([self.granularity])
+    #     unique_ids = filter_df[self.granularity].unique()
+    #     incoming_df = self.incoming_df[self.communication_metrics]
+    #     incoming_data = []
+    #     for key, item in group_df:
+    #         key_df = group_df.get_group(key)
+    #         idx_matrix = []
+    #         # print(key, key_df)
+    #         for idx, row in key_df.iterrows():
+    #             idx_matrix.append(row['CommData'])
+    #         idx_matrix_np = np.array(idx_matrix)
+    #         print(idx_matrix_np)
+    #         sum_idx_np = idx_matrix_np.sum(axis = 0)
+    #         print(sum_idx_np.tolist())
+    #         # sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(unique_ids))
+    #         incoming_data.append(sum_idx_np.tolist())
+    #     incoming_df['AggrCommData'] = incoming_data 
+    #     schema = {k:self.process_type(type(v).__name__) for k,v in incoming_df.iloc[0].items()}
+    #     return {
+    #         "incoming_df": incoming_df.to_dict('records'),
+    #         "schema": schema,
+    #     }
+
     def comm_data_interval(self, interval):
         # self.granularity = 'KpGid'
         # self.communication_metrics.append('KpGid')
+        if(self.granularity == 'KpGid'):
+            self.communication_metrics.append('Peid')
+            self.communication_metrics.append('Kpid')
+
         df = self.df[self.communication_metrics]
         filter_df = df.loc[df[self.time_domain].between(interval[0], interval[1]) == True]
-        group_df = filter_df.groupby([self.granularity])
+        group_df = filter_df.groupby(['KpGid'])
         unique_ids = filter_df[self.granularity].unique()
-        incoming_df = pd.DataFrame()
-        incoming_data = []
+        incoming_df = self.incoming_df[self.communication_metrics]
+        incoming_data = np.zeros(shape=(128, 128))
         for key, item in group_df:
             key_df = group_df.get_group(key)
             idx_matrix = []
+            # print(key, key_df)
             for idx, row in key_df.iterrows():
                 idx_matrix.append(row['CommData'])
             idx_matrix_np = np.array(idx_matrix)
+            print(idx_matrix_np)
             sum_idx_np = idx_matrix_np.sum(axis = 0)
+            print(sum_idx_np.tolist())
             # sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(unique_ids))
-            incoming_data.append(sum_idx_np.tolist())
-        print(incoming_data)
-        incoming_df['CommData'] = incoming_data 
+            index = int(row['Peid'].unique()[0])*16 + int(row['Kpid'].unique()[0])
+            print(row['Peid'].unique()[0], row['Kpid'].unique()[0], index)
+            incoming_data[index] = sum_idx_np.tolist()
+        incoming_df['AggrCommData'] = incoming_data.T.tolist()
         schema = {k:self.process_type(type(v).__name__) for k,v in incoming_df.iloc[0].items()}
         return {
             "incoming_df": incoming_df.to_dict('records'),
             "schema": schema,
         }
 
+
     def comm_data_interval_mode2(self, interval, Peid):
-        self.communication_metrics.append('Peid')
+        if(self.granularity == 'KpGid'):
+            self.communication_metrics.append('Peid')
+            self.communication_metrics.append('Kpid')
         df = self.df[self.communication_metrics]
         filter_df = df.loc[df['LastGvt'].between(interval[0], interval[1]) == True]
         group_df = filter_df.groupby([self.granularity])
@@ -170,9 +216,7 @@ class StreamData:
                 for idx, row in key_df.iterrows():
                     idx_matrix.append(row['CommData'])
                 idx_matrix_np = np.array(idx_matrix)
-                print(idx_matrix_np)
                 sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(key_df))
-                print(sum_idx_np)
                 incoming_data.append(sum_idx_np.tolist())
         incoming_df['CommData'] = incoming_data 
         schema = {k:self.process_type(type(v).__name__) for k,v in incoming_df.iloc[0].items()}
@@ -277,10 +321,10 @@ class CPD(StreamData):
         self.alpha = 0.2
         self.aff_obj = PCAAFFCPD(alpha=self.alpha)
 
-    def format(self, result):
+    def format(self, result, count):
         cpd = [(result)]
-        cpd_result = pd.DataFrame(data=cpd, columns=['cpd'],)
-        return [cpd_result]
+        cpd_result = pd.DataFrame(cpd, columns=['cpd'])
+        return cpd_result
 
     def tick(self, data, method):
         ret = False
@@ -299,7 +343,7 @@ class CPD(StreamData):
                 result = self.aff_update()
             elif(self.method == 'stream'):
                 result = self.stream_update()
-        return self.format(result)
+        return self.format(result, self.count)
 
     def get_change_points(self):
         # Getter to return the change points.

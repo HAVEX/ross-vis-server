@@ -57,22 +57,29 @@ class PCAStreamCPD(pca_stream_cpd_cpp.PCAStreamCPD):
         return super().feed_predict(new_time_point)
 
 class StreamData:
-    def __init__(self, data, granularity, metric, time_domain):
+    def __init__(self, data, granularity, cluster_metric, calc_metrics, causality_metrics, communication_metrics, time_domain):
         self.count = 0
         self.granularity = granularity
         self.time_domain = time_domain
-        self.metric = metric
+        self.communication_metrics = communication_metrics
+        self.calc_metrics = calc_metrics
+        self.causality_metrics = causality_metrics
+        self.cluster_metric = cluster_metric
         self.df = pd.DataFrame(data)
         self.df['RbPrim'] = self.df['RbTotal'] - self.df['RbSec']
         self.incoming_df = self.df
         self.new_data_df = self.df
+        
         self.metric_df = self.preprocess(self.df)
         # set new_data_df for the first stream as metric_df
         self.whole_data_df = self.metric_df
         
-        self.communication_metrics = ['CommData', 'RbTotal', 'RbSec', 'LastGvt', 'RbPrim']
-        self.communication_metrics.append(self.granularity)
-        self.metric_to_clusterby = 'RbSec'
+        # If granularity is KP, send both Kp and Pe data. 
+        if(self.granularity == 'Kpid'):
+            self.communication_metrics.append(self.granularity)
+            self.communication_metrics.append('Peid')
+        else:
+            self.communication_metrics.append(self.granularity)
 
         self.algo_clustering = 'kmeans'
 
@@ -122,52 +129,58 @@ class StreamData:
         if(self.granularity == 'KpGid'):
             self.communication_metrics.append('Peid')
             self.communication_metrics.append('Kpid')
-        _df = self.df[self.communication_metrics]
-        _incoming_df = self.incoming_df[self.communication_metrics]
-        # _time = self.df[self.time_domain].unique()[self.count]
-        # _kpmatrix = self.kp_matrix()
-        _schema = {k:self.process_type(type(v).__name__) for k,v in _incoming_df.iloc[0].items()}
+
+        # Remove unnecessary columns from df
+        df = self.incoming_df[self.communication_metrics]
+        
+        # columns get duplicated somehow. Not sure why?
+        df = df.loc[:,~df.columns.duplicated()]
+
+        # Group by Pe to Pe level data.
+        group_df = df.groupby(['Peid'])
+
+        # Number of PEs = number of groups
+        pe_count = group_df.ngroups
+
+        pe_comm_arr = []
+        # Loop through each key.
+        for key, group in group_df:
+            pe_df = group_df.get_group(key)
+
+            # Get the required information.
+            comm_data_series = pe_df['CommData']
+            kpid = pe_df['Kpid']
+            peid = pe_df['Peid'].unique()[0]
+ 
+            # Get number of KPs.
+            kp_count = len(pe_df['Kpid'].unique())
+
+            # Calculate the inter communication between the PEs.
+            mean_comm = []
+            for idx, row in enumerate(comm_data_series):
+                kp_mean_comm = []
+                for i in range(0, pe_count):
+                    pe_comm = row[i*kp_count: (i+1)*kp_count]
+                    mean_pe_comm = np.sum(np.array(pe_comm), axis=0)
+                    kp_mean_comm.append(mean_pe_comm)
+                mean_comm.append(kp_mean_comm)
+            
+            # Calculate the mean across all KPs
+            pe_comm_np = np.mean(np.array(mean_comm).T, axis=1)
+            pe_comm_list = pe_comm_np.tolist()
+            pe_comm_arr.append(pe_comm_list)
+
+        ret_df = self.incoming_df[self.communication_metrics]
+        _schema = {k:self.process_type(type(v).__name__) for k,v in ret_df.iloc[0].items()}
         return {
-            "incoming_df": _incoming_df.to_dict('records'),
-            # "time": _time, 
+            "kp_comm": ret_df.to_dict('records'),
+            "pe_comm": pe_comm_arr,
+            "kp_count": kp_count,
+            "pe_count": pe_count,
             "schema": _schema
         }
 
- # def comm_data_interval(self, interval):
-    #     # self.granularity = 'KpGid'
-    #     # self.communication_metrics.append('KpGid')
-    #     if(self.granularity == 'KpGid'):
-    #         self.communication_metrics.append('Peid')
-    #         self.communication_metrics.append('Kpid')
-
-    #     df = self.df[self.communication_metrics]
-    #     filter_df = df.loc[df[self.time_domain].between(interval[0], interval[1]) == True]
-    #     group_df = filter_df.groupby([self.granularity])
-    #     unique_ids = filter_df[self.granularity].unique()
-    #     incoming_df = self.incoming_df[self.communication_metrics]
-    #     incoming_data = []
-    #     for key, item in group_df:
-    #         key_df = group_df.get_group(key)
-    #         idx_matrix = []
-    #         # print(key, key_df)
-    #         for idx, row in key_df.iterrows():
-    #             idx_matrix.append(row['CommData'])
-    #         idx_matrix_np = np.array(idx_matrix)
-    #         print(idx_matrix_np)
-    #         sum_idx_np = idx_matrix_np.sum(axis = 0)
-    #         print(sum_idx_np.tolist())
-    #         # sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(unique_ids))
-    #         incoming_data.append(sum_idx_np.tolist())
-    #     incoming_df['AggrCommData'] = incoming_data 
-    #     schema = {k:self.process_type(type(v).__name__) for k,v in incoming_df.iloc[0].items()}
-    #     return {
-    #         "incoming_df": incoming_df.to_dict('records'),
-    #         "schema": schema,
-    #     }
-
     def comm_data_interval(self, interval):
-        # self.granularity = 'KpGid'
-        # self.communication_metrics.append('KpGid')
         if(self.granularity == 'KpGid'):
             self.communication_metrics.append('Peid')
             self.communication_metrics.append('Kpid')
@@ -202,17 +215,18 @@ class StreamData:
         for key, item in group_df:
             key_df = group_df.get_group(key)
             idx_matrix = np.zeros(shape=comm_matrix_shape)
-            
-            # Get index of this sample. 
-            peid = row['Peid']
-            kpid = row['Kpid']
-            index = peid*kp_count + kpid
-               
+                
             for idx, row in key_df.iterrows():
-                idx_matrix[index] = append(row['CommData'])
+                 # Get index of this sample. 
+                peid = row['Peid']
+                kpid = row['Kpid']
+                index = peid*kp_count + kpid
+                idx_matrix[index] = row['CommData']
                           
             # Sum the matrices we got. 
             sum_idx_matrix = idx_matrix.sum(axis = 0)
+
+            # For average of the runtimes use this. 
             # sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(unique_ids))
             comm_data[index] = sum_idx_matrix
 
@@ -224,47 +238,22 @@ class StreamData:
             "schema": schema,
         }
 
-
-    def comm_data_interval_mode2(self, interval, Peid):
-        if(self.granularity == 'KpGid'):
-            self.communication_metrics.append('Peid')
-            self.communication_metrics.append('Kpid')
-        df = self.df[self.communication_metrics]
-        filter_df = df.loc[df['LastGvt'].between(interval[0], interval[1]) == True]
-        group_df = filter_df.groupby([self.granularity])
-        incoming_df = pd.DataFrame()
-        incoming_data = []
-        for key, item in group_df:
-            if(key == Peid):
-                key_df = group_df.get_group(key)
-                idx_matrix = []
-                for idx, row in key_df.iterrows():
-                    idx_matrix.append(row['CommData'])
-                idx_matrix_np = np.array(idx_matrix)
-                sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(key_df))
-                incoming_data.append(sum_idx_np.tolist())
-        incoming_df['CommData'] = incoming_data 
-        schema = {k:self.process_type(type(v).__name__) for k,v in incoming_df.iloc[0].items()}
-        return {
-            "incoming_df": incoming_df.to_dict('records'),
-            "schema": schema,
-        }
-
-
     def groupby(self, df, keys, metric = 'mean'):
         # Groups data by the keys provided
         self.groups = df.groupby(keys)
         measure = getattr(self.groups, metric)
         self.data = measure() 
 
+    # Process (Group the data) for all cluster_metrics
     def preprocess(self, df):
         # Group the data by granularity (PE, KP, LP) and time. 
         # Converts into a table and the shape is (number of processing elements, number of time steps)
         self.groupby(df, [self.granularity, self.time_domain])
-        table = pd.pivot_table(df, values=[self.metric], index=[self.granularity], columns=[self.time_domain])
+        table = pd.pivot_table(df, values=[self.cluster_metric], index=[self.granularity], columns=[self.time_domain])
         self.current_time = table.columns
         return table
 
+    # Process (Group the data) only for a specific metric. 
     def processByMetric(self, df, metric):
         self.groupby(df, [self.granularity, self.time_domain])
         table = pd.pivot_table(df, values=[metric], index=[self.granularity], columns=[self.time_domain], fill_value=0)
@@ -330,12 +319,13 @@ class StreamData:
         #self.to_csv(self.count)
         return self.format()
 
-    def to_csv(self, filename):
-        # Write the metric_df to a csv file
-        self.results.to_csv(str(filename) + str(self.metric) + '.csv')
 
-    def from_csv(self, filename):
-        self.results = pd.read_csv(str(filename) + str(self.metric) + '.csv')
+    def to_csv(self, filename, metric):
+        # Write the metric_df to a csv file
+        self.results.to_csv(str(filename) + str(self.cluster_metric) + '.csv')
+
+    def from_csv(self, filename, metric):
+        self.results = pd.read_csv(str(filename) + str(self.cluster_metric) + '.csv')
         return self.format()
 
 class CPD(StreamData):
@@ -355,7 +345,6 @@ class CPD(StreamData):
         ret = False
         self.new_data_df = data.new_data_df
         self.count = data.count
-        self.metric = data.metric
         self.current_time = data.current_time
         self.method = method
         if(self.count == 1):
@@ -640,27 +629,28 @@ class Causal(StreamData):
     def tick(self, data, method):
         self.df = data.whole_data_df
         self.incoming_df = data.incoming_df
-        self.metric = data.metric
+        self.cluster_metric = data.cluster_metric
         self.time_domain = data.time_domain
         self.granularity = data.granularity
+        self.causality_metrics = data.causality_metrics
         
-        metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
+        self.data_metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
          'RbTime', 'RbTotal', 'RbPrim']
 
-        calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
+        self.calc_metrics =  ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
          'RbTime', 'RbTotal', 'RbPrim']
 
-        metrics.append(self.granularity)
-        metrics.append(self.time_domain)
+        self.data_metrics.append(self.granularity)
+        self.data_metrics.append(self.time_domain)
 
         pca = ProgIncPCA(1)
         total_latency_for_pca = 100
-        latency_for_each = int(total_latency_for_pca / len(metrics))
+        latency_for_each = int(total_latency_for_pca / len(self.data_metrics))
         n = self.incoming_df.shape[0]
-        X = np.empty(shape=(n, len(metrics)))
-        self.df = self.df[metrics] 
+        X = np.empty(shape=(n, len(self.data_metrics)))
+        self.df = self.df[self.data_metrics] 
 
-        for i, metric in enumerate(calc_metrics):
+        for i, metric in enumerate(self.calc_metrics):
             start = time.time()
             metric_pd = data.processByMetric(self.df, metric)
             if(metric not in self.pivot_table_results):
@@ -678,34 +668,34 @@ class Causal(StreamData):
             metric_1d = pca.transform(metric_nd)
             X[:, i] = metric_1d[:, 0]
 
-        X = pd.DataFrame(X, columns=metrics)
-        X = X[calc_metrics]
+        X = pd.DataFrame(X, columns=self.data_metrics)
+        X = X[self.causality_metrics]
         is_non_const_col = (X != X.iloc[0]).any()
         X = X.loc[:, is_non_const_col]
         X = X.replace([np.inf, -np.inf], np.nan)
         X = X.fillna(0.0)
 
         causality_from = pd.DataFrame(
-            index=[0], columns=calc_metrics).fillna(False)
+            index=[0], columns=self.causality_metrics).fillna(False)
         causality_to = pd.DataFrame(
-            index=[0], columns=calc_metrics).fillna(False)
+            index=[0], columns=self.causality_metrics).fillna(False)
 
-        ir_from = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
-        ir_to = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
+        ir_from = pd.DataFrame(index=[0], columns=self.causality_metrics).fillna(0.0)
+        ir_to = pd.DataFrame(index=[0], columns=self.causality_metrics).fillna(0.0)
 
-        vd_from = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
-        vd_to = pd.DataFrame(index=[0], columns=calc_metrics).fillna(0.0)
+        vd_from = pd.DataFrame(index=[0], columns=self.causality_metrics).fillna(0.0)
+        vd_to = pd.DataFrame(index=[0], columns=self.causality_metrics).fillna(0.0)
 
-        if is_non_const_col.loc[self.metric]:
+        if is_non_const_col.loc[self.cluster_metric]:
             causality = Causality()
             causality.adaptive_progresive_var_fit(
                 X, latency_limit_in_msec=100, point_choice_method="reverse")
 
-            causality_from, causality_to = causality.check_causality(data.metric, signif=0.1)
+            causality_from, causality_to = causality.check_causality(self.cluster_metric, signif=0.1)
 
             try:
                 tmp_ir_from, tmp_ir_to = causality.impulse_response(
-                    self.metric)
+                    self.cluster_metric)
                 ir_from.loc[0, is_non_const_col] = tmp_ir_from[:, 1]
                 ir_to.loc[0, is_non_const_col] = tmp_ir_to[:, 1]
             except:
@@ -715,7 +705,7 @@ class Causal(StreamData):
                     # "positive definite")
 
             try:
-                tmp_vd_from, tmp_vd_to = causality.variance_decomp(self.metric)
+                tmp_vd_from, tmp_vd_to = causality.variance_decomp(self.cluster_metric)
                 vd_from.loc[0, is_non_const_col] = tmp_vd_from[:, 1]
                 vd_to.loc[0, is_non_const_col] = tmp_vd_to[:, 1]
             except:
@@ -732,9 +722,9 @@ class Causal(StreamData):
         vd_to = vd_to.loc[0, :].tolist()
 
         
-        from_ = [(calc_metrics, self.numpybool_to_bool(causality_from),
+        from_ = [(self.causality_metrics, self.numpybool_to_bool(causality_from),
                   ir_from, vd_from)]
-        to_ = [(calc_metrics, self.numpybool_to_bool(causality_to), ir_to,
+        to_ = [(self.causality_metrics, self.numpybool_to_bool(causality_to), ir_to,
                 vd_to)]
             
         from_result = pd.DataFrame(

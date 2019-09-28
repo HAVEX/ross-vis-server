@@ -85,11 +85,10 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             res = process(stream, stream_count)
 
     def open(self):
-        self.data_attribute = 'PeData'
+        # self.data_attribute = 'PeData'
         self.method = 'get' 
-        self.granularity = 'Peid'
-        self.metric = ['NeventProcessed']
-        self.time_domain = 'LastGvt'
+        # self.granularity = 'Peid'
+        # self.metric = ['NeventProcessed']
         self.algo = {
             'cpd': 'aff',
             'pca': 'prog_inc',
@@ -98,16 +97,15 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         }
         self.stream_count = 0
         self.stream_objs = {}
-        self.max_stream_count = 20
         self.update = 1
         WebSocketHandler.waiters.add(self)
 
     def process(self, stream):  
         ret = {}                  
-        for idx, metric in enumerate(self.metric):
+        for idx, metric in enumerate(self.calc_metrics):
             print('Calculating results for {0}'.format(metric))
             if self.stream_count == 0: 
-                self.stream_data = StreamData(stream, self.granularity, metric, self.time_domain)
+                self.stream_data = StreamData(stream, self.granularity, self.cluster_metric, self.calc_metrics, self.causality_metrics, self.communication_metrics, self.time_domain)
                 self.stream_objs[metric] = self.stream_data
                 ret[metric] = self.stream_data.format()
                 ret['data'] = [{}, {}]
@@ -139,35 +137,52 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
     def on_message(self, message, binary=False):
         req = json.loads(message)
 
+        # Tells the server to load the specific data from the bin file.
         if('data' in req and req['data'] in ['PeData', 'KpData', 'LpData']):
             self.data_attribute = req['data']
 
+        # Kinds of request methods that can be queried in the server
         if('method' in req and req['method'] in ['stream', 'get', 'set', 'get-count', 'pre-calc', 'comm-data-interval']):
             self.method = req['method']
         
+        # Granuality selected by the user. 
         if('granularity' in req and req['granularity'] in ['Peid', 'KpGid', 'Lpid', 'Kpid']):
             self.granularity = req['granularity']
 
+        # y-axis metric
         if('timeDomain' in req and req['timeDomain'] in ['LastGvt', 'VirtualTime', 'RealTs']):
             self.time_domain = req['timeDomain']
 
+        # Not used. (For different algorithms to be executied)
         if('cpdMethod' in req and req['cpdMethod'] in ['aff', 'stream']):
             self.algo.cpd = req['cpdMethod']
 
+        # Not used. (For different algorithms to be executied)
         if('pcaMethod' in req and req['pcaMethod'] in ['prog_inc', 'inc']):
             self.algo.pca = req['pcaMethod']
 
+        # For var
         if('causalityMethod' in req and req['causalityMethod'] in ['var']):
             self.algo.causality = req['causalityMethod']
-
+    
+        # For clustering
         if('clusteringMethod' in req and req['clusteringMethod'] in ['evostream']):
             self.algo.clustering = req['clusteringMethod']
 
-        if('metric' in req):
-            self.metric = req['metric']   
+        if('clusterMetric' in req):
+            self.cluster_metric = req['clusterMetric']   
+        else:
+            print("Cluster metric not assigned, using Secondary rollback instead")
+            self.cluster_metric = 'RbSec'
 
-        if('stream_count' in req):
-            self.stream_count = req['stream_count']
+        if("communicationMetrics" in req):
+            self.communication_metrics = req['communication_metrics']
+        else:
+            print("Communication metrics not assigned, using default list of metrics instead")
+            self.communication_metrics =  ['CommData', 'RbTotal', 'RbSec', 'LastGvt', 'RbPrim']
+
+        if('streamCount' in req):
+            self.stream_count = req['streamCount']
 
         if('update' in req):
             self.update = req['update']
@@ -180,13 +195,23 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         else:
             self.socket_request = None
 
+        if('calcMetrics' in req):
+            self.calc_metrics = req['calcMetrics']
+        else:
+            self.calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventRb', 'NeventProcessed', 'RbSec', 'RbTotal']
+
+        if('causalityMetrics' in req):
+            self.causality_metrics = req['causalityMetrics']
+        else:
+            self.causality_metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', 'RbTime', 'RbTotal', 'RbPrim']
+
         if(self.method == 'stream' and self.request == 0):
             rd = RossData([self.data_attribute])
             sample = WebSocketHandler.cache.data[self.stream_count]
             stream = flatten(rd.fetch(sample))
             res = self.process(stream)
             msg = {}
-            for idx, metric in enumerate(self.metric):
+            for idx, metric in enumerate(self.calc_metrics):
                 r = res.get(metric)
                 result = r[0]
                 schema = r[1]
@@ -242,13 +267,13 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if(self.method == 'set' and self.request == 0):
             WebSocketHandler.params = req['params']
             self.write_message({'status': 'ok'})
-            print(WebSocketHandler.params)
+            # print(WebSocketHandler.params)
 
         if(self.socket_request == 'comm-data-interval'):
             if('interval' in req):
                 self.interval = req['interval']
             print('==========================================================')
-            msg['aggr_comm'] = self.stream_objs[self.metric[0]].comm_data_interval(self.interval)
+            msg['aggr_comm'] = self.stream_objs[self.cluster_metric].comm_data_interval(self.interval)
             # self.write_message(ret)
 
         if(self.method == 'comm-data-interval-mode2' and self.request == 1):
@@ -261,7 +286,6 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
             ret['comm'] = self.stream_objs[self.metric[0]].comm_data_interval(self.interval, self.peid)
             self.write_message(ret)
 
-        print(msg.keys())
         self.write_message(msg)
 
 

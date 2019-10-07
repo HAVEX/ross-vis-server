@@ -57,7 +57,7 @@ class PCAStreamCPD(pca_stream_cpd_cpp.PCAStreamCPD):
         return super().feed_predict(new_time_point)
 
 class StreamData:
-    def __init__(self, data, granularity, cluster_metric, calc_metrics, causality_metrics, communication_metrics, time_domain):
+    def __init__(self, data, granularity, cluster_metric, calc_metrics, causality_metrics, communication_metrics, time_domain, this_metric):
         self.count = 0
         self.granularity = granularity
         self.time_domain = time_domain
@@ -65,10 +65,15 @@ class StreamData:
         self.calc_metrics = calc_metrics
         self.causality_metrics = causality_metrics
         self.cluster_metric = cluster_metric
+        self.this_metric = this_metric
+
         self.df = pd.DataFrame(data)
         self.df['RbPrim'] = self.df['RbTotal'] - self.df['RbSec']
         self.incoming_df = self.df
         self.new_data_df = self.df
+
+        self.pe_count = len(self.df['Peid'].unique())
+        self.kp_count = len(self.df['Kpid'].unique())
         
         self.metric_df = self.preprocess(self.df)
         # set new_data_df for the first stream as metric_df
@@ -142,6 +147,8 @@ class StreamData:
         # Number of PEs = number of groups
         pe_count = group_df.ngroups
 
+        min_pe_comm = 0
+        max_pe_comm = 0
         pe_comm_arr = []
         # Loop through each key.
         for key, group in group_df:
@@ -152,15 +159,12 @@ class StreamData:
             kpid = pe_df['Kpid']
             peid = pe_df['Peid'].unique()[0]
  
-            # Get number of KPs.
-            kp_count = len(pe_df['Kpid'].unique())
-
             # Calculate the inter communication between the PEs.
             mean_comm = []
             for idx, row in enumerate(comm_data_series):
                 kp_mean_comm = []
                 for i in range(0, pe_count):
-                    pe_comm = row[i*kp_count: (i+1)*kp_count]
+                    pe_comm = row[i*self.kp_count: (i+1)*self.kp_count]
                     mean_pe_comm = np.sum(np.array(pe_comm), axis=0)
                     kp_mean_comm.append(mean_pe_comm)
                 mean_comm.append(kp_mean_comm)
@@ -168,18 +172,145 @@ class StreamData:
             # Calculate the mean across all KPs
             pe_comm_np = np.mean(np.array(mean_comm).T, axis=1)
             pe_comm_list = pe_comm_np.tolist()
+            min_pe_comm = min(min_pe_comm, np.min(pe_comm_np))
+            max_pe_comm = max(max_pe_comm, np.max(pe_comm_np))
             pe_comm_arr.append(pe_comm_list)
 
         ret_df = self.incoming_df[self.communication_metrics]
-        _schema = {k:self.process_type(type(v).__name__) for k,v in ret_df.iloc[0].items()}
+        schema = {k:self.process_type(type(v).__name__) for k,v in ret_df.iloc[0].items()}
         return {
             "kp_comm": ret_df.to_dict('records'),
             "pe_comm": pe_comm_arr,
-            "kp_count": kp_count,
-            "pe_count": pe_count,
-            "schema": _schema
+            "kp_count": self.kp_count,
+            "pe_count": self.pe_count,
+            "min_comm": min_pe_comm,
+            "max_comm": max_pe_comm,
+            "schema": schema
+        }
+    
+    def comm_df_time(self, df, time):
+        # Drop columns we dont need.
+        df = self.df[self.communication_metrics]
+
+        # columns get duplicated somehow. Not sure why?
+        df = df.loc[:,~df.columns.duplicated()]
+
+        # Get the rows with self.time_domain == time. 
+        time1 = time - 100.0
+        time2 = time + 100.0
+        # print("Times: {0}, {1}", time1, time2)
+        df = df.loc[df[self.time_domain].between(time1, time2) == True]
+
+        # print("df info: {1} shape {0}, ".format(df.shape, df[self.time_domain].unique()))
+        return df
+
+    ################################################
+    # PE and KP communication for normal Comm data.
+    ################################################
+    def comm_df_to_pe_matrix(self, df, group_by):
+        group_df = df.groupby([group_by])
+
+        min_pe_comm = 0
+        max_pe_comm = 0
+        pe_comm_arr = []
+        # Loop through each key.
+        for key, group in group_df:
+            # Group the df. 
+            pe_df = group_df.get_group(key)
+
+            # Get the required information.
+            comm_data_series = pe_df['CommData']
+            kpid = pe_df['Kpid']
+            peid = pe_df['Peid'].unique()[0]
+
+            # Calculate the inter communication between the PEs.
+            mean_comm = []
+            for idx, row in enumerate(comm_data_series):
+                kp_mean_comm = []
+                for i in range(0, self.pe_count):
+                    pe_comm = row[i*self.kp_count: (i+1)*self.kp_count]
+                    mean_pe_comm = np.sum(np.array(pe_comm), axis=0)
+                    kp_mean_comm.append(mean_pe_comm)
+                mean_comm.append(kp_mean_comm)
+            
+            # Calculate the mean across all KPs
+            pe_comm_np = np.mean(np.array(mean_comm).T, axis=1)
+            pe_comm_list = pe_comm_np.tolist()
+            min_pe_comm = min(min_pe_comm, np.min(pe_comm_np))
+            max_pe_comm = max(max_pe_comm, np.max(pe_comm_np))
+            pe_comm_arr.append(pe_comm_list)
+        return [pe_comm_arr, min_pe_comm, max_pe_comm]
+
+    def comm_df_to_kp_matrix(self, df, group_by):
+        group_df = df.groupby([group_by])
+
+        # create the matrix we need to send. 
+        number_of_pes = self.pe_count*self.kp_count
+        kp_comm_matrix_shape = (number_of_pes, number_of_pes)
+        kp_comm_matrix = np.zeros(shape=kp_comm_matrix_shape)
+        
+        # Loop through the communication at each sampled timepoint.
+        for key, item in group_df:
+            key_df = group_df.get_group(key)
+
+            number_of_times = len(key_df[self.time_domain].unique())
+            kp_comm_time_matrix_shape = (number_of_times, number_of_pes)
+
+            kp_matrix = np.zeros(shape=kp_comm_time_matrix_shape)
+            for idx, row in key_df.iterrows():
+                # Get index of this sample. 
+                peid = row['Peid']
+                kpid = row['Kpid']
+                index = peid*self.kp_count + kpid
+
+                kp_time_group_df = key_df.groupby([self.time_domain])
+
+                time_idx = 0
+                for time, time_item in kp_time_group_df:
+                    time_df = kp_time_group_df.get_group(time)
+                    kp_matrix[time_idx] = time_df['CommData'].tolist()[0]
+                    time_idx += 1
+                    
+            # Sum the matrices we got. 
+            kp_matrix_sum = kp_matrix.sum(axis = 0)
+        
+            # For average of the runtimes use this. 
+            # kp_matrix_avg = np.divide(kp_matrix_sum, number_of_pes)
+            
+            kp_comm_matrix[index] = kp_matrix_sum
+        
+        return kp_comm_matrix
+
+    ########################################################
+    # Base communication
+    ########################################################
+    def comm_data_base(self, time):
+        if time == None:
+            time = self.incoming_df[self.time_domain].unique()[0]
+        print('-=----------------' +  str(time) + '------------------------=-')
+        print(self.incoming_df[self.time_domain].unique()[0])
+        if(self.granularity == 'KpGid'):
+            self.communication_metrics.append('Peid')
+            self.communication_metrics.append('Kpid')
+
+        df_time = self.comm_df_time(self.df, time)
+        df_time = df_time.sort_values(['KpGid'])
+        print('Base dataframe shape: {0}'.format(df_time.shape))
+        pe_matrix_results = self.comm_df_to_pe_matrix(df_time, 'Peid')
+        kp_matrix = self.comm_df_to_kp_matrix(df_time, 'KpGid')  
+        return {
+            'data': df_time.to_dict('records'),
+            "kp_comm": kp_matrix.tolist(),
+            "pe_comm": pe_matrix_results[0],
+            "kp_count": self.kp_count,
+            "pe_count": self.pe_count,
+            "min_comm": pe_matrix_results[1],
+            "max_comm": pe_matrix_results[2],
         }
 
+    ########################################################
+    # Interval communication
+    ########################################################
     def comm_data_interval(self, interval):
         if(self.granularity == 'KpGid'):
             self.communication_metrics.append('Peid')
@@ -188,6 +319,9 @@ class StreamData:
         # Drop columns we dont need.
         df = self.df[self.communication_metrics]
         
+        # columns get duplicated somehow. Not sure why?
+        df = df.loc[:,~df.columns.duplicated()]
+
         # Filter between the time ranges
         filter_df = df.loc[df[self.time_domain].between(interval[0], interval[1]) == True]
         
@@ -204,39 +338,136 @@ class StreamData:
         unique_ids = filter_df[self.granularity].unique()
         
         # Drop columns in the return df
-        ret_df = self.incoming_df[self.communication_metrics]
+        # kp_comm_df = self.incoming_df[self.communication_metrics]
         
         # create the matrix we need to send. 
         number_of_pes = pe_count*kp_count
-        comm_matrix_shape = (number_of_pes, number_of_pes)
-        comm_data = np.zeros(shape=comm_matrix_shape)
+        kp_comm_matrix_shape = (number_of_pes, number_of_pes)
+        kp_comm_matrix = np.zeros(shape=kp_comm_matrix_shape)
         
         # Loop through the communication at each sampled timepoint.
         for key, item in group_df:
             key_df = group_df.get_group(key)
-            idx_matrix = np.zeros(shape=comm_matrix_shape)
-                
+
+            number_of_times = len(key_df[self.time_domain].unique())
+            kp_comm_time_matrix_shape = (number_of_times, number_of_pes)
+
+            # print('=========================-' + str(key) + '-===================================')
+            kp_matrix = np.zeros(shape=kp_comm_time_matrix_shape)
             for idx, row in key_df.iterrows():
-                 # Get index of this sample. 
+                # Get index of this sample. 
                 peid = row['Peid']
                 kpid = row['Kpid']
                 index = peid*kp_count + kpid
-                idx_matrix[index] = row['CommData']
-                          
+
+                kp_time_group_df = key_df.groupby([self.time_domain])
+
+                time_idx = 0
+                for time, time_item in kp_time_group_df:
+                    time_df = kp_time_group_df.get_group(time)
+                    kp_matrix[time_idx] = time_df['CommData'].tolist()[0]
+                    time_idx += 1
+                    
             # Sum the matrices we got. 
-            sum_idx_matrix = idx_matrix.sum(axis = 0)
+            kp_matrix_sum = kp_matrix.sum(axis = 0)
+            # print('-==============================================-')
+            # print(kp_matrix_sum)
 
             # For average of the runtimes use this. 
-            # sum_idx_np = np.divide(idx_matrix_np.sum(axis=0), len(unique_ids))
-            comm_data[index] = sum_idx_matrix
+            kp_matrix_avg = np.divide(kp_matrix_sum, number_of_times)
+            
+            # if(len(kp_comm_matrix[index]) != 0 ):
+            #     print('Here')
+            #     kp_comm_matrix[index] = np.add(kp_comm_matrix[index], kp_matrix_sum)  
+            #     # print(kp_comm_matrix[index])          
+            # else:
+            kp_comm_matrix[index] = kp_matrix_avg
 
         # Create a new column "AggrCommData" and send the results
-        ret_df['AggrCommData'] = comm_data.tolist()
+        # ret_df['AggrCommData'] = kp_comm_matrix.tolist()
+
+        ### PE level communication ###
+
+        # Group by Pe to Pe level data.
+        group_df = filter_df.groupby(['Peid'])
+
+        # Number of PEs = number of groups
+        pe_count = group_df.ngroups
+
+        max_pe_comm = 0
+        min_pe_comm = 0
+        pe_comm_matrix = []
+        # Loop through each key.
+        for key, group in group_df:
+            pe_df = group_df.get_group(key)
+
+            pe_matrix_shape = (number_of_times, number_of_pes, number_of_pes)
+
+            pe_matrix = np.zeros(shape = pe_matrix_shape)
+            pe_time_group_df = pe_df.groupby([self.time_domain])
+
+            time_idx = 0
+            for time, time_item in pe_time_group_df:
+                time_df = pe_time_group_df.get_group(time)
+                for time_df_idx, time_df_row in time_df.iterrows():
+                    kpGid = time_df_row['KpGid']
+                    pe_matrix[time_idx][kpGid] = time_df_row['CommData']
+                time_idx += 1
+
+            pe_matrix_sum = pe_matrix.sum(axis = 0)
+
+            pe_matrix_avg = np.divide(pe_matrix_sum, number_of_times)
+
+            # Get the required information.
+            # comm_data_series = pe_df['CommData']
+            comm_data_series = pe_matrix_sum
+
+            kpid = pe_df['Kpid']
+            peid = pe_df['Peid'].unique()[0]
+ 
+            # Get number of KPs.
+            kp_count = len(pe_df['Kpid'].unique())
+
+            # Calculate the inter communication between the PEs.
+            mean_comm = []
+            for idx, row in enumerate(comm_data_series):
+                kp_mean_comm = []
+                for i in range(0, pe_count):
+                    pe_comm = row[i*kp_count: (i+1)*kp_count]
+                    mean_pe_comm = np.sum(np.array(pe_comm), axis=0)
+                    kp_mean_comm.append(mean_pe_comm)
+                mean_comm.append(kp_mean_comm)
+            
+
+            # print(np.array(mean_comm).shape)
+            # Calculate the mean across all KPs
+            pe_comm_np = np.mean(np.array(mean_comm), axis=0)
+
+            # print(pe_comm_np)
+
+            # Set maximum communication
+            max_pe_comm = max(max_pe_comm, np.max(pe_comm_np))
+
+            # Set minimum communication
+            min_pe_comm = min(min_pe_comm, np.min(pe_comm_np))
+
+            pe_comm_list = pe_comm_np.tolist()
+            pe_comm_matrix.append(pe_comm_list)
+        
+        ret_df = self.incoming_df[self.communication_metrics]
         schema = {k:self.process_type(type(v).__name__) for k,v in ret_df.iloc[0].items()}
-        return {
-            "incoming_df": ret_df.to_dict('records'),
-            "schema": schema,
+        result = {
+            "data": ret_df.to_dict('records'), 
+            "aggr_kp_comm": kp_comm_matrix.tolist(),
+            "aggr_pe_comm": pe_comm_matrix,
+            "kp_count": kp_count,
+            "pe_count": pe_count,
+            'max_comm': max_pe_comm,
+            'min_comm': min_pe_comm,
+            "schema": schema
         }
+
+        return result
 
     def groupby(self, df, keys, metric = 'mean'):
         # Groups data by the keys provided
@@ -249,7 +480,7 @@ class StreamData:
         # Group the data by granularity (PE, KP, LP) and time. 
         # Converts into a table and the shape is (number of processing elements, number of time steps)
         self.groupby(df, [self.granularity, self.time_domain])
-        table = pd.pivot_table(df, values=[self.cluster_metric], index=[self.granularity], columns=[self.time_domain])
+        table = pd.pivot_table(df, values=[self.this_metric], index=[self.granularity], columns=[self.time_domain])
         self.current_time = table.columns
         return table
 
@@ -279,6 +510,8 @@ class StreamData:
         self.count = self.count + 1
         self._time = self.metric_df.columns.get_level_values(1).tolist()
         self.granIDs = self.df[self.granularity]
+        if(self.count == 75):
+            self.df.to_csv('communication_data.csv')
         return self     
 
     def deupdate(self, remove_data):
@@ -319,7 +552,6 @@ class StreamData:
         #self.to_csv(self.count)
         return self.format()
 
-
     def to_csv(self, filename, metric):
         # Write the metric_df to a csv file
         self.results.to_csv(str(filename) + str(self.cluster_metric) + '.csv')
@@ -333,7 +565,7 @@ class CPD(StreamData):
     def __init__(self):
         # Stores the change points recorded.
         self.cps = []
-        self.alpha = 0.2
+        self.alpha = 0.1
         self.aff_obj = PCAAFFCPD(alpha=self.alpha)
 
     def format(self, result, count):
@@ -369,7 +601,7 @@ class CPD(StreamData):
         change = self.stream.feed_predict(new_time_point)
         if change:
             self.cps.append(0)
-            print('Change', 0)
+            # print('Change', 0)
             return 1
         else:
             return 0
@@ -380,7 +612,7 @@ class CPD(StreamData):
         change = self.stream.feed_predict(Xt)
         if(change):
             self.cps.append(self.count)
-            print('Change', self.count)
+            # print('Change', self.count)
             return 1
         else:
             return 0
@@ -393,21 +625,22 @@ class CPD(StreamData):
         change = self.aff_obj.feed_predict(Xt[0, :])
         if change:
             self.cps.append(0)
-            print('#####################Change#######################', 0)
+            print('Change', 0)
             return 1
         else:
             return 0
             
     def aff_update(self):
+        print(self.count)
         X = np.array(self.new_data_df[self.current_time])
         Xt = X.transpose()
         change = self.aff_obj.feed_predict(Xt[0, :])
         if(change):
             self.cps.append(self.count)
-            print('#####################Change#######################', self.count)
+            print('Change', self.count)
             return 1
         else:
-            print('#####################No-change#######################', self.count)
+            # print('No-change#######################', self.count)
             return 0
 
 class PCA(StreamData):
@@ -634,11 +867,14 @@ class Causal(StreamData):
         self.granularity = data.granularity
         self.causality_metrics = data.causality_metrics
         
-        self.data_metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
-         'RbTime', 'RbTotal', 'RbPrim']
+        # self.data_metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
+        #  'RbTime', 'RbTotal', 'RbPrim']
 
-        self.calc_metrics =  ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
-         'RbTime', 'RbTotal', 'RbPrim']
+        # self.calc_metrics =  ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'NeventRb', 'RbSec', \
+        #  'RbTime', 'RbTotal', 'RbPrim']
+
+        self.data_metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'RbSec', 'NeventRb', 'RbTotal', 'RbPrim', 'NetReadTime', 'FcAttempts', 'EventTies', 'EventProcTime']
+        self.calc_metrics = ['NetworkRecv', 'NetworkSend', 'NeventProcessed', 'RbSec', 'NeventRb', 'RbTotal', 'RbPrim', 'NetReadTime', 'FcAttempts', 'EventTies', 'EventProcTime']
 
         self.data_metrics.append(self.granularity)
         self.data_metrics.append(self.time_domain)
